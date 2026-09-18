@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Look Up a System — CA SAFER Dashboard</title>
+<link rel="stylesheet" href="assets/style.css" />
+<script src="assets/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <nav class="dash-nav" id="nav"></nav>
+
+  <header class="page-header">
+    <h1>Look Up a Water System</h1>
+    <div class="asof" id="asof">Loading&hellip;</div>
+  </header>
+
+  <div class="stub-notice" id="stub-notice" style="display:none">
+    Showing example data. The live dataset (and its change history) populates
+    automatically once the daily snapshot workflow has run for a while &mdash;
+    change history can only start accumulating from whenever that workflow
+    first runs, so a brand-new deployment will show few or no recorded changes
+    at first even with real current-status data.
+  </div>
+
+  <div class="filters">
+    <label>County
+      <select id="filter-county"><option value="">All</option></select>
+    </label>
+    <label>Current SAFER status
+      <select id="filter-status"><option value="">All</option></select>
+    </label>
+    <label>Water system
+      <select id="filter-system"><option value="">Select a system&hellip;</option></select>
+    </label>
+  </div>
+
+  <div id="empty-state" class="empty-state">Choose a water system above to see its detail.</div>
+
+  <div id="detail" style="display:none">
+    <div class="panel">
+      <div class="panels thirds" style="margin-bottom:0;">
+        <div>
+          <div class="label" style="font-size:12px;color:var(--text-secondary);">PWSID</div>
+          <div id="d-pwsid" style="font-weight:600;">&mdash;</div>
+        </div>
+        <div>
+          <div class="label" style="font-size:12px;color:var(--text-secondary);">Water system name</div>
+          <div id="d-name" style="font-weight:600;">&mdash;</div>
+        </div>
+        <div>
+          <div class="label" style="font-size:12px;color:var(--text-secondary);">County</div>
+          <div id="d-county" style="font-weight:600;">&mdash;</div>
+        </div>
+        <div>
+          <div class="label" style="font-size:12px;color:var(--text-secondary);">Current status</div>
+          <div id="d-status">&mdash;</div>
+        </div>
+        <div>
+          <div class="label" style="font-size:12px;color:var(--text-secondary);">Economic status</div>
+          <div id="d-econ" style="font-weight:600;">&mdash;</div>
+        </div>
+        <div>
+          <div class="label" style="font-size:12px;color:var(--text-secondary);">Population served</div>
+          <div id="d-pop" style="font-weight:600;">&mdash;</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Status over time</h2>
+      <div class="chart-box"><canvas id="statusOverTime"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <h2>Status change history</h2>
+      <table>
+        <thead><tr><th>Date of status change</th><th>From status</th><th>To status</th><th></th></tr></thead>
+        <tbody id="change-table"></tbody>
+      </table>
+      <div id="no-changes" class="empty-state" style="display:none">No status changes recorded yet for this system.</div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><div class="label">First date system received Failing status</div><div class="value" id="tile-first-failing" style="font-size:20px;">&mdash;</div></div>
+      <div class="tile"><div class="label">Most recent date of status change</div><div class="value" id="tile-recent-change" style="font-size:20px;">&mdash;</div></div>
+      <div class="tile"><div class="label">Changes in past 12 months</div><div class="value" id="tile-changes-12mo">&mdash;</div></div>
+      <div class="tile"><div class="label">Days since last change</div><div class="value" id="tile-days-since">&mdash;</div></div>
+    </div>
+  </div>
+
+  <footer class="page-footer">
+    Source: <a href="https://data.ca.gov/dataset/drinking-water-safer" target="_blank" rel="noopener">CA SAFER dataset, data.ca.gov</a>.
+    Built by Darcy Bostic.
+  </footer>
+</div>
+
+<script src="assets/common.js"></script>
+<script>
+const EXAMPLE = {
+  latest: {
+    date: "2026-09-17",
+    records: [
+      { WATER_SYSTEM_NUMBER: "CA3901031", SYSTEM_NAME: "132 Investments Water System", COUNTY: "San Joaquin", POPULATION: 55, FINAL_SAFER_STATUS: "Not At-Risk", CURRENT_FAILING: "N", FAILING_START_DATE: "2017-01-01", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Miss/Indet" },
+      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", POPULATION: 412, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2024-03-01", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Disadvantaged" }
+    ]
+  },
+  changes: [
+    { date: "2026-09-04", water_system_number: "CA3901031", system_name: "132 Investments Water System", county: "San Joaquin", from_status: "Not At-Risk", to_status: "Failing", field_diffs: { E_COLI_VIOLATION: { from: "N", to: "Y" }, PRIMARY_MCL_VIOLATION_OPEN_ENFORCEMENT: { from: "N", to: "Y" } } },
+    { date: "2026-09-06", water_system_number: "CA3901031", system_name: "132 Investments Water System", county: "San Joaquin", from_status: "Failing", to_status: "Potentially At-Risk", field_diffs: { E_COLI_VIOLATION: { from: "Y", to: "N" } } },
+    { date: "2026-09-09", water_system_number: "CA3901031", system_name: "132 Investments Water System", county: "San Joaquin", from_status: "Potentially At-Risk", to_status: "Not At-Risk", field_diffs: { TREATMENT_TECHNIQUE_VIOLATIONS_3YR: { from: "3", to: "1" } } }
+  ]
+};
+
+let LATEST, CHANGES, isExample, isPartialLatest;
+
+function populateFilters() {
+  const counties = [...new Set(LATEST.records.map(r => r.COUNTY).filter(Boolean))].sort();
+  const statuses = [...new Set(LATEST.records.map(r => (r.FINAL_SAFER_STATUS || "").trim()).filter(Boolean))]
+    .sort((a, b) => (STATUS_SEVERITY[a] ?? 99) - (STATUS_SEVERITY[b] ?? 99));
+
+  const countySel = document.getElementById("filter-county");
+  counties.forEach(c => countySel.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
+
+  const statusSel = document.getElementById("filter-status");
+  statuses.forEach(s => statusSel.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`));
+
+  refreshSystemOptions();
+}
+
+function refreshSystemOptions() {
+  const county = document.getElementById("filter-county").value;
+  const status = document.getElementById("filter-status").value;
+  const sel = document.getElementById("filter-system");
+  const previous = sel.value;
+
+  const matches = LATEST.records
+    .filter(r => !county || r.COUNTY === county)
+    .filter(r => !status || (r.FINAL_SAFER_STATUS || "").trim() === status)
+    .sort((a, b) => (a.SYSTEM_NAME || "").localeCompare(b.SYSTEM_NAME || ""));
+
+  sel.innerHTML = `<option value="">Select a system&hellip; (${matches.length} match${matches.length === 1 ? "" : "es"})</option>` +
+    matches.map(r => `<option value="${escapeHtml(r.WATER_SYSTEM_NUMBER)}">${escapeHtml(r.SYSTEM_NAME)} &mdash; ${escapeHtml(r.COUNTY)}</option>`).join("");
+
+  if (matches.some(r => r.WATER_SYSTEM_NUMBER === previous)) {
+    sel.value = previous;
+  } else {
+    showDetail(null);
+  }
+}
+
+function showDetail(wsn) {
+  const detail = document.getElementById("detail");
+  const empty = document.getElementById("empty-state");
+  if (!wsn) {
+    detail.style.display = "none";
+    empty.style.display = "block";
+    return;
+  }
+  const record = LATEST.records.find(r => r.WATER_SYSTEM_NUMBER === wsn);
+  if (!record) return;
+  detail.style.display = "block";
+  empty.style.display = "none";
+
+  document.getElementById("d-pwsid").textContent = record.WATER_SYSTEM_NUMBER;
+  document.getElementById("d-name").textContent = record.SYSTEM_NAME;
+  document.getElementById("d-county").textContent = record.COUNTY;
+  document.getElementById("d-status").innerHTML = `<span class="status-pill ${statusClass(record.FINAL_SAFER_STATUS)}">${escapeHtml(record.FINAL_SAFER_STATUS || "")}</span>`;
+  document.getElementById("d-econ").textContent = record.SERVICE_AREA_ECONOMIC_STATUS || "—";
+  document.getElementById("d-pop").textContent = record.POPULATION == null ? "—" : fmt.format(parseInt(record.POPULATION, 10) || 0);
+
+  const systemChanges = CHANGES.filter(c => c.water_system_number === wsn).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Stat tiles
+  document.getElementById("tile-first-failing").textContent = record.FAILING_START_DATE || "—";
+
+  const noChanges = document.getElementById("no-changes");
+  const changeTableBody = document.getElementById("change-table");
+  changeTableBody.innerHTML = "";
+
+  if (systemChanges.length === 0) {
+    noChanges.style.display = "block";
+    document.getElementById("tile-recent-change").textContent = "—";
+    document.getElementById("tile-changes-12mo").textContent = "0";
+    document.getElementById("tile-days-since").textContent = "—";
+  } else {
+    noChanges.style.display = "none";
+    const mostRecent = systemChanges[systemChanges.length - 1];
+    document.getElementById("tile-recent-change").textContent = mostRecent.date;
+    document.getElementById("tile-days-since").textContent = fmt.format(daysBetween(mostRecent.date, LATEST.date));
+
+    const cutoff = monthsAgo(12);
+    const changesLast12mo = systemChanges.filter(c => new Date(c.date) >= cutoff);
+    document.getElementById("tile-changes-12mo").textContent = fmt.format(changesLast12mo.length);
+
+    systemChanges.slice().reverse().forEach((c, idx) => {
+      const detailId = `change-detail-${idx}`;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(c.date)}</td>
+        <td><span class="status-pill ${statusClass(c.from_status)}">${escapeHtml(c.from_status)}</span></td>
+        <td><span class="status-pill ${statusClass(c.to_status)}">${escapeHtml(c.to_status)}</span></td>
+        <td><a href="#" data-target="${detailId}" class="toggle-diff">What changed?</a></td>
+      `;
+      changeTableBody.appendChild(tr);
+      const detailTr = document.createElement("tr");
+      detailTr.id = detailId;
+      detailTr.style.display = "none";
+      detailTr.innerHTML = `<td colspan="4">${renderFieldDiffs(c.field_diffs)}</td>`;
+      changeTableBody.appendChild(detailTr);
+    });
+  }
+
+  renderStatusOverTime(systemChanges, record);
+}
+
+let statusChartInstance = null;
+function renderStatusOverTime(systemChanges, record) {
+  const ctx = document.getElementById("statusOverTime");
+  if (statusChartInstance) statusChartInstance.destroy();
+
+  let points;
+  if (systemChanges.length === 0) {
+    // No recorded transitions yet -- just show the current status as a flat line.
+    points = [
+      { x: LATEST.date, y: STATUS_SEVERITY[record.FINAL_SAFER_STATUS] ?? 0 }
+    ];
+  } else {
+    points = [];
+    const first = systemChanges[0];
+    const before = new Date(first.date);
+    before.setDate(before.getDate() - 1);
+    points.push({ x: before.toISOString().slice(0, 10), y: STATUS_SEVERITY[first.from_status] ?? 0 });
+    systemChanges.forEach(c => points.push({ x: c.date, y: STATUS_SEVERITY[c.to_status] ?? 0 }));
+  }
+
+  statusChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: [{
+        data: points,
+        borderColor: getVar("--series-3"),
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        stepped: "before",
+        pointRadius: 3,
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: "category", grid: { display: false }, ticks: { color: getVar("--muted") } },
+        y: {
+          min: -0.5, max: 3.5,
+          grid: { color: getVar("--grid") },
+          ticks: {
+            color: getVar("--muted"),
+            stepSize: 1,
+            callback: v => STATUS_ORDER[v] ?? ""
+          }
+        }
+      }
+    }
+  });
+}
+
+renderNav("nav", "system-lookup.html");
+
+document.getElementById("filter-county").addEventListener("change", refreshSystemOptions);
+document.getElementById("filter-status").addEventListener("change", refreshSystemOptions);
+document.getElementById("filter-system").addEventListener("change", e => showDetail(e.target.value || null));
+document.getElementById("change-table").addEventListener("click", e => {
+  const link = e.target.closest(".toggle-diff");
+  if (!link) return;
+  e.preventDefault();
+  const row = document.getElementById(link.dataset.target);
+  if (row) row.style.display = row.style.display === "none" ? "" : "none";
+});
+
+(async function init() {
+  const [latestResult, changesResult] = await Promise.all([
+    loadOrExample(() => loadJson("data/latest.json"), EXAMPLE.latest),
+    loadOrExample(() => loadJsonl("data/changes.jsonl"), EXAMPLE.changes),
+  ]);
+  LATEST = latestResult.data;
+  CHANGES = changesResult.data;
+  isExample = latestResult.isExample || changesResult.isExample;
+  isPartialLatest = !latestResult.isExample && LATEST.partial === true;
+
+  document.getElementById("asof").textContent = `As of ${LATEST.date}`;
+  const notice = document.getElementById("stub-notice");
+  if (isExample) {
+    notice.style.display = "block";
+  } else if (isPartialLatest) {
+    notice.style.display = "block";
+    notice.innerHTML = "Real change history is loaded below. The system list only includes systems that have changed status so far (not the full statewide list) until the daily snapshot has run against the live API &mdash; and population/economic-status fields aren't available yet either.";
+  } else {
+    notice.style.display = "none";
+  }
+  populateFilters();
+})();
+</script>
+</body>
+</html>
