@@ -1,0 +1,34 @@
+name: Daily SAFER snapshot
+
+on:
+  schedule:
+    # 13:00 UTC = 6:00am Pacific (adjusts automatically for PDT/PST since
+    # this is a fixed UTC time, not a local one -- shift by an hour twice a
+    # year if you want the actual local run time to stay put).
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch today's SAFER snapshot
+        run: python scripts/fetch_snapshot.py
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name "safer-dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/history.jsonl data/latest.json data/summary.jsonl data/changes.jsonl
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Daily SAFER snapshot $(date -u +%Y-%m-%d)"
+          git push
