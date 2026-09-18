@@ -15,3 +15,4 @@
 {"date":"2026-09-16","total_systems":3190,"currently_failing":436,"population_in_failing_systems":460230,"by_status":{"At-Risk":625,"Not At-Risk":1500,"Potentially At-Risk":448,"Failing":436,"Not Assessed":181}}
 {"date":"2026-09-17","total_systems":3190,"currently_failing":434,"population_in_failing_systems":435098,"by_status":{"Not At-Risk":1480,"Potentially At-Risk":473,"At-Risk":624,"Failing":434,"Not Assessed":179}}
 {"date":"2026-09-18","total_systems":3190,"currently_failing":433,"population_in_failing_systems":435048,"by_status":{"Failing":433,"At-Risk":624,"Not At-Risk":1481,"Potentially At-Risk":473,"Not Assessed":179}}
+{"date":"2026-09-18","total_systems":3190,"currently_failing":0,"population_in_failing_systems":0,"by_status":{"Not At-Risk":1481,"At-Risk":626,"Potentially At-Risk":473,"Failing":431,"Not Assessed":179}}
