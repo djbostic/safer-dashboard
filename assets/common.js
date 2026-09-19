@@ -310,7 +310,7 @@ function countyBasemapSvg(countyData, width, height, highlightCounty) {
     const fill = isHighlight ? `color-mix(in srgb, ${getVar('--accent-terracotta')} 12%, ${getVar('--surface-1')})` : getVar('--surface-1');
     const stroke = isHighlight ? getVar('--accent-terracotta') : getVar('--baseline');
     const strokeWidth = isHighlight ? 1.4 : 0.6;
-    return `<path class="county-outline" data-county="${escapeHtml(c.nameUpper)}" d="${geometryPath(c.type, c.coords, width, height)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>`;
+    return `<path class="county-outline" data-county="${escapeHtml(c.nameUpper)}" data-base-stroke="${strokeWidth}" d="${geometryPath(c.type, c.coords, width, height)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>`;
   }).join("");
   return state + counties;
 }
@@ -359,7 +359,7 @@ async function renderPointMap(container, points, { width = 480, height = 420, zo
   const circles = usable.map((p, i) => {
     const { x, y } = projectPoint(p.lat, p.lon, width, height);
     const r = p.r || 3;
-    return `<circle data-idx="${i}" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r}" fill="${p.color || getVar('--series-1')}" fill-opacity="0.9" ${p.wsn ? 'style="cursor:pointer;"' : ""}/>`;
+    return `<circle data-idx="${i}" data-base-r="${r}" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r}" fill="${p.color || getVar('--series-1')}" fill-opacity="0.9" ${p.wsn ? 'style="cursor:pointer;"' : ""}/>`;
   }).join("");
 
   // FULL_EXTENT is the outermost zoom-out limit (the whole state); HOME is
@@ -384,9 +384,35 @@ async function renderPointMap(container, points, { width = 480, height = 420, zo
   const svg = container.querySelector("svg.point-map");
   let view = { ...HOME };
 
+  // Circle radii and county stroke widths are in SVG user units, so with a
+  // fixed viewBox they'd balloon as you zoom in (the same r covers a much
+  // bigger fraction of a shrunk viewBox) and shrink to nothing zooming out.
+  // The base r/stroke-width values on each element were sized to look right
+  // against the FULL statewide viewBox (width = FULL_EXTENT.w) -- that's
+  // still true when the map opens zoomed out to the whole state, but when
+  // it opens already zoomed to a single county (zoomToBounds), HOME.w is
+  // only a small fraction of FULL_EXTENT.w, so scaling relative to HOME
+  // would leave markers at their full statewide size even before any
+  // manual zoom. Scaling relative to FULL_EXTENT.w instead keeps markers a
+  // consistent, sensible on-screen size at every zoom level -- full state,
+  // a county's HOME view, or zoomed in further from there.
+  const circleEls = [...svg.querySelectorAll("circle[data-base-r]")];
+  const countyEls = [...svg.querySelectorAll(".county-outline[data-base-stroke]")];
+
   function applyView() {
     svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+    const scale = Math.min(Math.max(view.w / FULL_EXTENT.w, 0.012), 1.05);
+    circleEls.forEach(el => {
+      const baseR = parseFloat(el.dataset.baseR);
+      el.setAttribute("r", (baseR * scale).toFixed(2));
+    });
+    countyEls.forEach(el => {
+      const baseStroke = parseFloat(el.dataset.baseStroke);
+      el.setAttribute("stroke-width", (baseStroke * scale).toFixed(2));
+    });
   }
+  applyView(); // scale markers correctly for the initial view, even when
+               // HOME is already zoomed to a county rather than the state
 
   function clientToUser(clientX, clientY) {
     const rect = svg.getBoundingClientRect();
