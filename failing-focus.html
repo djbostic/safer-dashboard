@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Failing Systems Focus — CA SAFER Dashboard</title>
+<title>Failing System Details — CA SAFER Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;600;700;800&display=swap" />
 <link rel="stylesheet" href="assets/style.css" />
 <script src="assets/chart.umd.min.js"></script>
 </head>
@@ -12,46 +15,50 @@
   <nav class="dash-nav" id="nav"></nav>
 
   <header class="page-header">
-    <h1>Failing Systems Focus</h1>
-    <div class="asof" id="asof">Loading&hellip;</div>
+    <div>
+      <h1>Failing System Details</h1>
+      <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">A closer look at systems on the Failing list.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="month-filter">
+        Viewing
+        <select id="filter-month"><option value="">Most recent</option></select>
+      </div>
+      <div class="asof" id="asof">Loading&hellip;</div>
+    </div>
   </header>
 
   <div class="stub-notice" id="stub-notice" style="display:none">
     Showing example data. The live dataset populates automatically once the daily
-    snapshot workflow runs (see <code>data/latest.json</code>) &mdash; this notice
+    snapshot workflow runs (see <code>data/summary.jsonl</code>) &mdash; this notice
     disappears on its own once real data is present.
   </div>
 
-  <div class="tiles">
-    <div class="tile"><div class="label">Systems tracked</div><div class="value" id="tile-total">&mdash;</div></div>
-    <div class="tile"><div class="label">Currently failing</div><div class="value critical" id="tile-failing">&mdash;</div></div>
-    <div class="tile"><div class="label">Population in failing systems</div><div class="value" id="tile-population">&mdash;</div></div>
-    <div class="tile"><div class="label">Counties affected</div><div class="value" id="tile-counties">&mdash;</div></div>
-  </div>
+  <div class="kpi-cards" id="kpi-cards"></div>
 
-  <div class="panels">
-    <div class="panel">
-      <h2>Failing systems over time</h2>
-      <div class="chart-box"><canvas id="trendChart"></canvas></div>
-    </div>
-    <div class="panel">
-      <h2>Status breakdown</h2>
-      <div class="chart-box"><canvas id="statusChart"></canvas></div>
+  <div class="panel">
+    <h2>Failing Systems &amp; Population Affected Over Time</h2>
+    <div class="chart-box"><canvas id="dualChart"></canvas></div>
+    <div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:6px;">
+      Left axis: systems failing (blue) &middot; right axis: population affected (violet). Two-axis charts can visually
+      overstate how closely two lines track each other &mdash; ask if you'd rather see this as one shared, indexed axis instead.
     </div>
   </div>
 
   <div class="panel">
-    <h2>Population affected over time</h2>
-    <div class="chart-box"><canvas id="populationChart"></canvas></div>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;">
+      <h2 style="margin-bottom:6px;">Most Common High-Risk Attributes Statewide</h2>
+      <span id="attributes-asof" style="font-size:11px;color:var(--muted);font-style:italic;"></span>
+    </div>
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:6px;">
+      Number of systems flagged <strong>HIGH</strong> risk on each Risk Assessment attribute
+      (see the Risk Categories &amp; Failing Criteria table on the Look Up a System page for what these mean per-system).
+    </div>
+    <div class="capsule-list" id="attributesList"></div>
   </div>
 
   <div class="panel">
-    <h2>Top counties by failing systems</h2>
-    <div class="chart-box"><canvas id="countyChart"></canvas></div>
-  </div>
-
-  <div class="panel">
-    <h2>Currently failing systems</h2>
+    <h2 id="table-title">Systems Failing Right Now, by Population Served</h2>
     <div id="failing-table-note" style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;"></div>
     <div style="max-height:520px;overflow-y:auto;">
       <table>
@@ -72,174 +79,161 @@
 <script src="assets/common.js"></script>
 <script>
 const EXAMPLE = {
+  summary: [
+    { date: "2026-08-18", total_systems: 7412, currently_failing: 372, total_population: 39500000, population_in_failing_systems: 148000, by_county: {}, high_risk_attribute_counts: {} },
+    { date: "2026-08-25", total_systems: 7412, currently_failing: 369, total_population: 39500000, population_in_failing_systems: 146500, by_county: {}, high_risk_attribute_counts: {} },
+    { date: "2026-09-01", total_systems: 7415, currently_failing: 365, total_population: 39600000, population_in_failing_systems: 145900, by_county: {}, high_risk_attribute_counts: {} },
+    { date: "2026-09-08", total_systems: 7415, currently_failing: 368, total_population: 39600000, population_in_failing_systems: 147200, by_county: {}, high_risk_attribute_counts: {} },
+    { date: "2026-09-17", total_systems: 7418, currently_failing: 364, total_population: 39700000, population_in_failing_systems: 146000, by_county: {}, high_risk_attribute_counts: {} }
+  ],
   latest: {
     date: "2026-09-17",
     records: [
-      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", POPULATION: 412, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2024-03-01", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Disadvantaged" },
-      { WATER_SYSTEM_NUMBER: "CA1510888", SYSTEM_NAME: "Sample Community Water District", COUNTY: "Fresno", POPULATION: 1875, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2023-11-15", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Severely Disadvantaged" },
-      { WATER_SYSTEM_NUMBER: "CA2010777", SYSTEM_NAME: "Placeholder Water Association", COUNTY: "Kern", POPULATION: 96, FINAL_SAFER_STATUS: "At-Risk", CURRENT_FAILING: "N", FAILING_START_DATE: "", REGULATING_AGENCY: "Local Primacy Agency", SERVICE_AREA_ECONOMIC_STATUS: "Disadvantaged" },
-      { WATER_SYSTEM_NUMBER: "CA3310555", SYSTEM_NAME: "Demo Small System", COUNTY: "Tulare", POPULATION: 63, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2025-01-20", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Disadvantaged" },
-      { WATER_SYSTEM_NUMBER: "CA4410222", SYSTEM_NAME: "Sample Rural System 5", COUNTY: "Monterey", POPULATION: 240, FINAL_SAFER_STATUS: "Potentially At-Risk", CURRENT_FAILING: "N", FAILING_START_DATE: "", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Not Disadvantaged" }
+      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", POPULATION: 412, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2024-03-01" },
+      { WATER_SYSTEM_NUMBER: "CA1510888", SYSTEM_NAME: "Sample Community Water District", COUNTY: "Fresno", POPULATION: 1875, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2023-11-15" }
     ]
-  },
-  summary: [
-    { date: "2026-08-18", total_systems: 7412, currently_failing: 372, population_in_failing_systems: 148000 },
-    { date: "2026-08-25", total_systems: 7412, currently_failing: 369, population_in_failing_systems: 146500 },
-    { date: "2026-09-01", total_systems: 7415, currently_failing: 365, population_in_failing_systems: 145900 },
-    { date: "2026-09-08", total_systems: 7415, currently_failing: 368, population_in_failing_systems: 147200 },
-    { date: "2026-09-17", total_systems: 7418, currently_failing: 364, population_in_failing_systems: 146000 }
-  ]
+  }
 };
 
-function render(latest, summary, isExample) {
-  document.getElementById("asof").textContent = `As of ${latest.date}`;
-  document.getElementById("stub-notice").style.display = isExample ? "block" : "none";
+let SUMMARY, LATEST, isExample;
+let snapshotCache = {};
 
-  const records = latest.records;
-  const failing = records.filter(isFailing);
-  const counties = new Set(failing.map(r => r.COUNTY));
-  const population = failing.reduce((sum, r) => sum + (parseInt(r.POPULATION, 10) || 0), 0);
+function capsuleList(containerId, entries, colorVar, opts) {
+  opts = opts || {};
+  const el = document.getElementById(containerId);
+  if (entries.length === 0) { el.innerHTML = `<div class="empty-state">Not available for this date.</div>`; return; }
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  el.innerHTML = entries.map(([label, value]) => {
+    const widthPct = Math.max((value / max) * 100, 3);
+    return `
+      <div class="capsule-row">
+        <div class="capsule-label" style="width:${opts.labelWidth || 230}px;flex-shrink:0;">${escapeHtml(label)}</div>
+        <div class="capsule-track"><div class="capsule-fill" style="width:${widthPct}%;background:${getVar(colorVar)};"></div></div>
+        <div class="capsule-value" style="width:${opts.valueWidth || 50}px;">${fmt.format(value)}</div>
+      </div>`;
+  }).join("");
+}
 
-  document.getElementById("tile-total").textContent = fmt.format(records.length);
-  document.getElementById("tile-failing").textContent = fmt.format(failing.length);
-  document.getElementById("tile-population").textContent = fmt.format(population);
-  document.getElementById("tile-counties").textContent = fmt.format(counties.size);
+async function snapshotForRow(row) {
+  if (LATEST && LATEST.date === row.date) return LATEST.records;
+  if (snapshotCache[row.date] !== undefined) return snapshotCache[row.date];
+  const snap = await loadSnapshotForDate(row.date);
+  snapshotCache[row.date] = snap ? snap.records : null;
+  return snapshotCache[row.date];
+}
 
-  new Chart(document.getElementById("trendChart"), {
+function renderKpis(row) {
+  const failingPct = ((row.currently_failing / Math.max(row.total_systems, 1)) * 100).toFixed(1);
+  const popPct = row.total_population ? ((row.population_in_failing_systems / row.total_population) * 100).toFixed(2) : "—";
+  const countiesAffected = Object.values(row.by_county || {}).filter(c => c.failing > 0).length;
+  const countiesTotal = Object.keys(row.by_county || {}).length;
+  const countiesPct = countiesTotal ? Math.round((countiesAffected / countiesTotal) * 100) : null;
+
+  const cards = [
+    { label: "Systems failing", value: fmt.format(row.currently_failing) },
+    { label: "Share of systems failing", value: `${failingPct}%` },
+    { label: "Share of population affected", value: row.total_population ? `${popPct}%` : "—" },
+    { label: "Counties affected", value: countiesTotal ? `${fmt.format(countiesAffected)}${countiesPct != null ? ` (${countiesPct}%)` : ""}` : "—" },
+  ];
+  document.getElementById("kpi-cards").innerHTML = cards.map(c => `
+    <div class="tile"><div class="label">${escapeHtml(c.label)}</div><div class="value critical">${c.value}</div></div>
+  `).join("");
+}
+
+function renderAttributes(row) {
+  const counts = row.high_risk_attribute_counts || {};
+  const entries = Object.entries(counts)
+    .filter(([field]) => ATTRIBUTE_LABELS[field])
+    .map(([field, n]) => [ATTRIBUTE_LABELS[field], n])
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  const asof = document.getElementById("attributes-asof");
+  if (entries.length === 0 || entries.every(([, n]) => n === 0)) {
+    document.getElementById("attributesList").innerHTML =
+      `<div class="empty-state">Risk-assessment attribute detail isn't available for this date (only carried by snapshots pulled from the live API, not the earlier backfilled import).</div>`;
+    asof.textContent = "";
+    return;
+  }
+  capsuleList("attributesList", entries, "--accent-terracotta", { labelWidth: 260, valueWidth: 50 });
+  asof.textContent = `As of ${row.date}`;
+}
+
+function renderDualChart(summaryRows) {
+  const rows = summaryRows.slice().sort((a, b) => a.date.localeCompare(b.date));
+  new Chart(document.getElementById("dualChart"), {
     type: "line",
     data: {
-      labels: summary.map(s => s.date),
-      datasets: [{
-        label: "Failing systems",
-        data: summary.map(s => s.currently_failing),
-        borderColor: getVar("--series-1"),
-        backgroundColor: "transparent",
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: 0.15
-      }]
+      labels: rows.map(s => s.date),
+      datasets: [
+        {
+          label: "Failing systems", data: rows.map(s => s.currently_failing), yAxisID: "y",
+          borderColor: getVar("--series-1"), backgroundColor: "transparent", borderWidth: 2, pointRadius: 3, tension: 0.15,
+        },
+        {
+          label: "Population affected", data: rows.map(s => s.population_in_failing_systems), yAxisID: "y1",
+          borderColor: "#6E5FA8", backgroundColor: "transparent", borderWidth: 2, pointRadius: 3, tension: 0.15,
+        },
+      ],
     },
     options: {
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: true, labels: { color: getVar("--text-secondary"), boxWidth: 12, font: { size: 11 } } } },
       scales: {
         x: { grid: { display: false }, ticks: { color: getVar("--muted") } },
-        y: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted") } }
-      }
-    }
-  });
-
-  new Chart(document.getElementById("populationChart"), {
-    type: "line",
-    data: {
-      labels: summary.map(s => s.date),
-      datasets: [{
-        label: "Population in failing systems",
-        data: summary.map(s => s.population_in_failing_systems),
-        borderColor: getVar("--series-2"),
-        backgroundColor: "transparent",
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: 0.15
-      }]
+        y: { position: "left", grid: { color: getVar("--grid") }, ticks: { color: getVar("--series-1") } },
+        y1: { position: "right", grid: { display: false }, ticks: { color: "#6E5FA8", callback: v => fmt.format(v) } },
+      },
     },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: getVar("--muted") } },
-        y: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted"), callback: v => fmt.format(v) } }
-      }
-    }
   });
+}
 
-  const statusCounts = {};
-  records.forEach(r => {
-    const s = (r.FINAL_SAFER_STATUS || "Unknown").trim();
-    statusCounts[s] = (statusCounts[s] || 0) + 1;
-  });
-  const statusLabels = Object.keys(statusCounts);
-  new Chart(document.getElementById("statusChart"), {
-    type: "bar",
-    data: {
-      labels: statusLabels,
-      datasets: [{
-        data: statusLabels.map(l => statusCounts[l]),
-        backgroundColor: statusLabels.map(l => statusColor(l)),
-        borderRadius: 4,
-        maxBarThickness: 40
-      }]
-    },
-    options: {
-      indexAxis: "y",
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted") } },
-        y: { grid: { display: false }, ticks: { color: getVar("--text-primary") } }
-      }
-    }
-  });
-
-  const countyCounts = {};
-  failing.forEach(r => {
-    const c = r.COUNTY || "Unknown";
-    countyCounts[c] = (countyCounts[c] || 0) + 1;
-  });
-  const topCounties = Object.entries(countyCounts).sort((a, b) => b[1] - a[1]).slice(0, 12);
-  new Chart(document.getElementById("countyChart"), {
-    type: "bar",
-    data: {
-      labels: topCounties.map(c => c[0]),
-      datasets: [{
-        data: topCounties.map(c => c[1]),
-        backgroundColor: getVar("--series-1"),
-        borderRadius: 4,
-        maxBarThickness: 28
-      }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: getVar("--text-primary") } },
-        y: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted") } }
-      }
-    }
-  });
-
-  document.getElementById("failing-table-note").textContent =
-    `${fmt.format(failing.length)} system${failing.length === 1 ? "" : "s"}, sorted by population served (largest first). Scroll for the full list.`;
+async function renderTable(row) {
+  const records = await snapshotForRow(row);
+  const noteEl = document.getElementById("failing-table-note");
+  document.getElementById("table-title").textContent = `Systems Failing as of ${row.date}, by Population Served`;
+  if (!records) {
+    noteEl.textContent = "";
+    document.getElementById("failing-table").innerHTML =
+      `<tr><td colspan="5" class="empty-state">Per-system detail isn't available for this date.</td></tr>`;
+    return;
+  }
+  const failing = records.filter(isFailing).sort((a, b) => (parseInt(b.POPULATION, 10) || 0) - (parseInt(a.POPULATION, 10) || 0));
+  noteEl.textContent = `${fmt.format(failing.length)} system${failing.length === 1 ? "" : "s"}, sorted by population served (largest first). Scroll for the full list.`;
   const tbody = document.getElementById("failing-table");
-  tbody.innerHTML = "";
-  failing
-    .sort((a, b) => (parseInt(b.POPULATION, 10) || 0) - (parseInt(a.POPULATION, 10) || 0))
-    .forEach(r => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(r.SYSTEM_NAME || "")}</td>
-        <td>${escapeHtml(r.COUNTY || "")}</td>
-        <td class="num">${fmt.format(parseInt(r.POPULATION, 10) || 0)}</td>
-        <td>${escapeHtml(r.FAILING_START_DATE || "&mdash;")}</td>
-        <td><span class="status-pill ${statusClass(r.FINAL_SAFER_STATUS)}">${escapeHtml(r.FINAL_SAFER_STATUS || "")}</span></td>
-      `;
-      tbody.appendChild(tr);
-    });
+  tbody.innerHTML = failing.map(r => `
+    <tr>
+      <td><a href="system-lookup.html">${escapeHtml(r.SYSTEM_NAME || "")}</a></td>
+      <td>${escapeHtml(titleCase(r.COUNTY || ""))}</td>
+      <td class="num">${fmt.format(parseInt(r.POPULATION, 10) || 0)}</td>
+      <td>${escapeHtml(r.FAILING_START_DATE || "—")}</td>
+      <td><span class="status-pill ${statusClass(r.FINAL_SAFER_STATUS)}">${escapeHtml(r.FINAL_SAFER_STATUS || "")}</span></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="empty-state">No failing systems recorded for this date.</td></tr>`;
+}
+
+async function render(month) {
+  const row = summaryRowForMonth(SUMMARY, month) || SUMMARY[SUMMARY.length - 1];
+  if (!row) return;
+  document.getElementById("asof").textContent = month ? `Showing ${monthLabel(month)} (as of ${row.date})` : `As of ${row.date}`;
+  renderKpis(row);
+  renderAttributes(row);
+  await renderTable(row);
 }
 
 renderNav("nav", "failing-focus.html");
+document.getElementById("filter-month").addEventListener("change", e => render(e.target.value));
 
 (async function init() {
-  try {
-    const [latest, summary] = await Promise.all([loadJson("data/latest.json"), loadJsonl("data/summary.jsonl")]);
-    if (latest.partial) {
-      // A partial, change-log-derived latest.json (see scripts/derive_latest_from_changes.py)
-      // only covers systems that have changed status -- it would badly undercount
-      // "currently failing" and misreport population, so this page specifically
-      // waits for a full snapshot rather than showing misleading numbers.
-      throw new Error("latest.json is partial; not suitable for the failing-focus totals");
-    }
-    render(latest, summary, false);
-  } catch (err) {
-    console.warn("Full live data not available yet, showing example data.", err);
-    render(EXAMPLE.latest, EXAMPLE.summary, true);
-  }
+  const [summaryResult, latestResult] = await Promise.all([
+    loadOrExample(() => loadJsonl("data/summary.jsonl"), EXAMPLE.summary),
+    loadOrExample(() => loadJson("data/latest.json"), EXAMPLE.latest),
+  ]);
+  SUMMARY = summaryResult.data;
+  LATEST = latestResult.data;
+  isExample = summaryResult.isExample || latestResult.isExample;
+  document.getElementById("stub-notice").style.display = isExample ? "block" : "none";
+
+  populateMonthSelect(document.getElementById("filter-month"), SUMMARY, "Most recent");
+  renderDualChart(SUMMARY);
+  await render("");
 })();
 </script>
 </body>

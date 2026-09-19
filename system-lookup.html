@@ -4,8 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Look Up a System — CA SAFER Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;600;700;800&display=swap" />
 <link rel="stylesheet" href="assets/style.css" />
-<script src="assets/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -30,6 +32,9 @@
     </label>
     <label>Current SAFER status
       <select id="filter-status"><option value="">All</option></select>
+    </label>
+    <label>Economic status
+      <select id="filter-econ"><option value="">All</option></select>
     </label>
     <label>Water system
       <select id="filter-system"><option value="">Select a system&hellip;</option></select>
@@ -70,7 +75,8 @@
 
     <div class="panel">
       <h2>Status over time</h2>
-      <div class="chart-box"><canvas id="statusOverTime"></canvas></div>
+      <p style="margin:0 0 14px;font-size:13px;color:var(--text-secondary);">Each colored block below is a period of time this system held one status. Width shows roughly how long it lasted; the list underneath spells out the exact dates.</p>
+      <div id="statusTimeline"></div>
     </div>
 
     <div class="panel">
@@ -88,6 +94,19 @@
       <div class="tile"><div class="label">Changes in past 12 months</div><div class="value" id="tile-changes-12mo">&mdash;</div></div>
       <div class="tile"><div class="label">Days since last change</div><div class="value" id="tile-days-since">&mdash;</div></div>
     </div>
+
+    <div class="panel">
+      <h2>Risk Categories &amp; Failing Criteria</h2>
+      <div id="risk-categories"></div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;">
+        <h2 style="margin-bottom:6px;">System Location</h2>
+        <span style="font-size:11px;color:var(--muted);font-style:italic;">Approximate position (simple lat/long projection, not official boundaries)</span>
+      </div>
+      <div style="height:320px;" id="systemMap"></div>
+    </div>
   </div>
 
   <footer class="page-footer">
@@ -102,8 +121,8 @@ const EXAMPLE = {
   latest: {
     date: "2026-09-17",
     records: [
-      { WATER_SYSTEM_NUMBER: "CA3901031", SYSTEM_NAME: "132 Investments Water System", COUNTY: "San Joaquin", POPULATION: 55, FINAL_SAFER_STATUS: "Not At-Risk", CURRENT_FAILING: "N", FAILING_START_DATE: "2017-01-01", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Miss/Indet" },
-      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", POPULATION: 412, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2024-03-01", REGULATING_AGENCY: "State Water Board", SERVICE_AREA_ECONOMIC_STATUS: "Disadvantaged" }
+      { WATER_SYSTEM_NUMBER: "CA3901031", SYSTEM_NAME: "132 Investments Water System", COUNTY: "San Joaquin", POPULATION: 55, FINAL_SAFER_STATUS: "Not At-Risk", CURRENT_FAILING: "N", FAILING_START_DATE: "2017-01-01", SERVICE_AREA_ECONOMIC_STATUS: "Miss/Indet", LATITUDE_MEASURE: 37.9, LONGITUDE_MEASURE: -121.3 },
+      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", POPULATION: 412, FINAL_SAFER_STATUS: "Failing", CURRENT_FAILING: "Y", FAILING_START_DATE: "2024-03-01", SERVICE_AREA_ECONOMIC_STATUS: "Disadvantaged", LATITUDE_MEASURE: 36.2, LONGITUDE_MEASURE: -119.3 }
     ]
   },
   changes: [
@@ -113,18 +132,22 @@ const EXAMPLE = {
   ]
 };
 
-let LATEST, CHANGES, isExample, isPartialLatest;
+let LATEST, CHANGES, isExample, isPartialLatest, EARLIEST_TRACKED_DATE;
 
 function populateFilters() {
   const counties = [...new Set(LATEST.records.map(r => r.COUNTY).filter(Boolean))].sort();
   const statuses = [...new Set(LATEST.records.map(r => (r.FINAL_SAFER_STATUS || "").trim()).filter(Boolean))]
     .sort((a, b) => (STATUS_SEVERITY[a] ?? 99) - (STATUS_SEVERITY[b] ?? 99));
+  const econStatuses = [...new Set(LATEST.records.map(r => r.SERVICE_AREA_ECONOMIC_STATUS).filter(Boolean))].sort();
 
   const countySel = document.getElementById("filter-county");
-  counties.forEach(c => countySel.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
+  counties.forEach(c => countySel.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(c)}">${escapeHtml(titleCase(c))}</option>`));
 
   const statusSel = document.getElementById("filter-status");
   statuses.forEach(s => statusSel.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`));
+
+  const econSel = document.getElementById("filter-econ");
+  econStatuses.forEach(s => econSel.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`));
 
   refreshSystemOptions();
 }
@@ -132,22 +155,74 @@ function populateFilters() {
 function refreshSystemOptions() {
   const county = document.getElementById("filter-county").value;
   const status = document.getElementById("filter-status").value;
+  const econ = document.getElementById("filter-econ").value;
   const sel = document.getElementById("filter-system");
   const previous = sel.value;
 
   const matches = LATEST.records
     .filter(r => !county || r.COUNTY === county)
     .filter(r => !status || (r.FINAL_SAFER_STATUS || "").trim() === status)
+    .filter(r => !econ || r.SERVICE_AREA_ECONOMIC_STATUS === econ)
     .sort((a, b) => (a.SYSTEM_NAME || "").localeCompare(b.SYSTEM_NAME || ""));
 
   sel.innerHTML = `<option value="">Select a system&hellip; (${matches.length} match${matches.length === 1 ? "" : "es"})</option>` +
-    matches.map(r => `<option value="${escapeHtml(r.WATER_SYSTEM_NUMBER)}">${escapeHtml(r.SYSTEM_NAME)} &mdash; ${escapeHtml(r.COUNTY)}</option>`).join("");
+    matches.map(r => `<option value="${escapeHtml(r.WATER_SYSTEM_NUMBER)}">${escapeHtml(r.SYSTEM_NAME)} &mdash; ${escapeHtml(titleCase(r.COUNTY))}</option>`).join("");
 
   if (matches.some(r => r.WATER_SYSTEM_NUMBER === previous)) {
     sel.value = previous;
   } else {
     showDetail(null);
   }
+}
+
+function riskPill(level) {
+  const lvl = String(level || "").toUpperCase();
+  if (!lvl || lvl === "NOT ASSESSED") return `<span class="status-pill" style="background:var(--plane);color:var(--muted);">Not assessed</span>`;
+  return `<span class="status-pill" style="background:color-mix(in srgb, ${riskLevelColor(lvl)} 16%, transparent);color:${riskLevelColor(lvl)};">${escapeHtml(titleCase(lvl))}</span>`;
+}
+
+function renderRiskCategories(record) {
+  const container = document.getElementById("risk-categories");
+  const hasAnyCategory = Object.values(CATEGORY_FIELD).some(f => record[f] != null);
+  if (!hasAnyCategory) {
+    container.innerHTML = `<div class="empty-state">Risk-assessment detail isn't available for this system yet (only carried by snapshots pulled from the live API, not the earlier backfilled import).</div>`;
+    return;
+  }
+  let html = `<div style="display:flex;flex-direction:column;gap:2px;">`;
+  Object.entries(CATEGORY_ATTRIBUTES).forEach(([category, fields]) => {
+    const overall = record[CATEGORY_FIELD[category]];
+    html += `
+      <div style="display:flex;align-items:center;justify-content:space-between;background:color-mix(in srgb, var(--accent-terracotta) 10%, var(--plane));padding:8px 12px;border-radius:6px;margin-top:8px;">
+        <span style="font-weight:800;font-size:13px;color:var(--text-primary);">${escapeHtml(category)} Risk Level</span>
+        ${riskPill(overall)}
+      </div>`;
+    fields.forEach(field => {
+      const label = ATTRIBUTE_LABELS[field] || prettyField(field.replace(/_RISK_LEVEL$/, ""));
+      const value = record[field];
+      html += `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px 6px 24px;border-bottom:1px solid var(--grid);">
+          <span style="font-size:12.5px;color:var(--text-secondary);">${escapeHtml(label)}</span>
+          ${riskPill(value)}
+        </div>`;
+    });
+  });
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function renderSystemMap(record) {
+  const container = document.getElementById("systemMap");
+  const lat = parseFloat(record.LATITUDE_MEASURE);
+  const lon = parseFloat(record.LONGITUDE_MEASURE);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    container.innerHTML = `<div class="empty-state">Location data isn't available for this system yet.</div>`;
+    return;
+  }
+  const context = LATEST.records
+    .filter(r => r.LATITUDE_MEASURE != null && r.LONGITUDE_MEASURE != null && r.WATER_SYSTEM_NUMBER !== record.WATER_SYSTEM_NUMBER)
+    .map(r => ({ lat: parseFloat(r.LATITUDE_MEASURE), lon: parseFloat(r.LONGITUDE_MEASURE), color: getVar("--baseline"), r: 1.3 }));
+  const highlight = { lat, lon, color: statusColor(record.FINAL_SAFER_STATUS), r: 7, title: record.SYSTEM_NAME };
+  renderPointMap(container, [...context, highlight], { width: 480, height: 400 });
 }
 
 function showDetail(wsn) {
@@ -165,14 +240,13 @@ function showDetail(wsn) {
 
   document.getElementById("d-pwsid").textContent = record.WATER_SYSTEM_NUMBER;
   document.getElementById("d-name").textContent = record.SYSTEM_NAME;
-  document.getElementById("d-county").textContent = record.COUNTY;
+  document.getElementById("d-county").textContent = titleCase(record.COUNTY);
   document.getElementById("d-status").innerHTML = `<span class="status-pill ${statusClass(record.FINAL_SAFER_STATUS)}">${escapeHtml(record.FINAL_SAFER_STATUS || "")}</span>`;
   document.getElementById("d-econ").textContent = record.SERVICE_AREA_ECONOMIC_STATUS || "—";
   document.getElementById("d-pop").textContent = record.POPULATION == null ? "—" : fmt.format(parseInt(record.POPULATION, 10) || 0);
 
   const systemChanges = CHANGES.filter(c => c.water_system_number === wsn).sort((a, b) => a.date.localeCompare(b.date));
 
-  // Stat tiles
   document.getElementById("tile-first-failing").textContent = record.FAILING_START_DATE || "—";
 
   const noChanges = document.getElementById("no-changes");
@@ -213,62 +287,84 @@ function showDetail(wsn) {
   }
 
   renderStatusOverTime(systemChanges, record);
+  renderRiskCategories(record);
+  renderSystemMap(record);
 }
 
-let statusChartInstance = null;
-function renderStatusOverTime(systemChanges, record) {
-  const ctx = document.getElementById("statusOverTime");
-  if (statusChartInstance) statusChartInstance.destroy();
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
-  let points;
+function formatDateLong(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function buildStatusSegments(systemChanges, record) {
+  const trackStart = EARLIEST_TRACKED_DATE && EARLIEST_TRACKED_DATE < LATEST.date ? EARLIEST_TRACKED_DATE : LATEST.date;
+
   if (systemChanges.length === 0) {
-    // No recorded transitions yet -- just show the current status as a flat line.
-    points = [
-      { x: LATEST.date, y: STATUS_SEVERITY[record.FINAL_SAFER_STATUS] ?? 0 }
-    ];
-  } else {
-    points = [];
-    const first = systemChanges[0];
-    const before = new Date(first.date);
-    before.setDate(before.getDate() - 1);
-    points.push({ x: before.toISOString().slice(0, 10), y: STATUS_SEVERITY[first.from_status] ?? 0 });
-    systemChanges.forEach(c => points.push({ x: c.date, y: STATUS_SEVERITY[c.to_status] ?? 0 }));
+    return [{ status: record.FINAL_SAFER_STATUS || "Unknown", start: trackStart, end: LATEST.date, ongoing: true }];
   }
 
-  statusChartInstance = new Chart(ctx, {
-    type: "line",
-    data: {
-      datasets: [{
-        data: points,
-        borderColor: getVar("--series-3"),
-        backgroundColor: "transparent",
-        borderWidth: 2,
-        stepped: "before",
-        pointRadius: 3,
-      }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { type: "category", grid: { display: false }, ticks: { color: getVar("--muted") } },
-        y: {
-          min: -0.5, max: 3.5,
-          grid: { color: getVar("--grid") },
-          ticks: {
-            color: getVar("--muted"),
-            stepSize: 1,
-            callback: v => STATUS_ORDER[v] ?? ""
-          }
-        }
-      }
-    }
+  const segments = [];
+  const first = systemChanges[0];
+  if (trackStart < first.date) {
+    segments.push({ status: first.from_status, start: trackStart, end: addDays(first.date, -1), ongoing: false });
+  }
+  systemChanges.forEach((c, idx) => {
+    const next = systemChanges[idx + 1];
+    const end = next ? addDays(next.date, -1) : LATEST.date;
+    segments.push({ status: c.to_status, start: c.date, end: end < c.date ? c.date : end, ongoing: !next });
   });
+  return segments;
+}
+
+function renderStatusOverTime(systemChanges, record) {
+  const container = document.getElementById("statusTimeline");
+  const segments = buildStatusSegments(systemChanges, record);
+
+  const totalDays = Math.max(1, daysBetween(segments[0].start, segments[segments.length - 1].end) + 1);
+
+  const trackHtml = segments.map(seg => {
+    const days = daysBetween(seg.start, seg.end) + 1;
+    const widthPct = Math.max((days / totalDays) * 100, 3);
+    const bg = statusColor(seg.status);
+    const textColor = statusClass(seg.status) === "Failing" ? "#ffffff" : "#24231f";
+    const label = widthPct >= 12 ? escapeHtml(seg.status) : "";
+    const title = `${escapeHtml(seg.status)}: ${formatDateLong(seg.start)} – ${seg.ongoing ? "present" : formatDateLong(seg.end)}`;
+    return `<div class="timeline-segment" style="width:${widthPct}%;background:${bg};color:${textColor};" title="${title}">${label}</div>`;
+  }).join("");
+
+  const legendHtml = segments.slice().reverse().map(seg => {
+    const range = seg.ongoing
+      ? `${formatDateLong(seg.start)} – present (still current)`
+      : `${formatDateLong(seg.start)} – ${formatDateLong(seg.end)}`;
+    return `
+      <div class="timeline-legend-row">
+        <span class="timeline-swatch" style="background:${statusColor(seg.status)};"></span>
+        <span class="timeline-legend-status">${escapeHtml(seg.status)}</span>
+        <span class="timeline-legend-range">${range}</span>
+      </div>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="timeline-track">${trackHtml}</div>
+    <div class="timeline-endpoints">
+      <span>${formatDateLong(segments[0].start)}</span>
+      <span>Present (${formatDateLong(LATEST.date)})</span>
+    </div>
+    <div class="timeline-legend">${legendHtml}</div>
+  `;
 }
 
 renderNav("nav", "system-lookup.html");
 
 document.getElementById("filter-county").addEventListener("change", refreshSystemOptions);
 document.getElementById("filter-status").addEventListener("change", refreshSystemOptions);
+document.getElementById("filter-econ").addEventListener("change", refreshSystemOptions);
 document.getElementById("filter-system").addEventListener("change", e => showDetail(e.target.value || null));
 document.getElementById("change-table").addEventListener("click", e => {
   const link = e.target.closest(".toggle-diff");
@@ -279,14 +375,17 @@ document.getElementById("change-table").addEventListener("click", e => {
 });
 
 (async function init() {
-  const [latestResult, changesResult] = await Promise.all([
+  const [latestResult, changesResult, summaryResult] = await Promise.all([
     loadOrExample(() => loadJson("data/latest.json"), EXAMPLE.latest),
     loadOrExample(() => loadJsonl("data/changes.jsonl"), EXAMPLE.changes),
+    loadOrExample(() => loadJsonl("data/summary.jsonl"), [{ date: "2026-08-18" }]),
   ]);
   LATEST = latestResult.data;
   CHANGES = changesResult.data;
   isExample = latestResult.isExample || changesResult.isExample;
   isPartialLatest = !latestResult.isExample && LATEST.partial === true;
+  const summaryRows = summaryResult.data;
+  EARLIEST_TRACKED_DATE = summaryRows.length ? summaryRows.map(r => r.date).sort()[0] : LATEST.date;
 
   document.getElementById("asof").textContent = `As of ${LATEST.date}`;
   const notice = document.getElementById("stub-notice");

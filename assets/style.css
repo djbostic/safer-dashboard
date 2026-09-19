@@ -1,13 +1,19 @@
 :root {
   color-scheme: light;
-  --surface-1: #fcfcfb;
-  --plane: #f9f9f7;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --baseline: #c3c2b7;
-  --border: rgba(11,11,11,0.10);
+  /* Warm cream chrome to match darcybostic.com. Chart/status colors below
+     (series-*, good/warning/serious/critical) are the dataviz skill's
+     colorblind-validated palette and are left untouched -- only the
+     non-data chrome (background, text, borders, links, nav) is retinted. */
+  --surface-1: #faf8f3;
+  --plane: #f1ede4;
+  --text-primary: #24231f;
+  --text-secondary: #5c584d;
+  --muted: #6e6a5d;
+  --grid: #e4ddd0;
+  --baseline: #cdc6b6;
+  --border: rgba(36,35,31,0.12);
+  --accent-sage: #3f6049;
+  --accent-terracotta: #a85a24;
   --series-1: #2a78d6; /* blue */
   --series-2: #eb6834; /* orange */
   --series-3: #1baf7a; /* aqua */
@@ -20,14 +26,16 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --plane: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --baseline: #383835;
-    --border: rgba(255,255,255,0.10);
+    --surface-1: #221f18;
+    --plane: #17160f;
+    --text-primary: #f5f1e6;
+    --text-secondary: #c9c3b0;
+    --muted: #a29c8a;
+    --grid: #34302a;
+    --baseline: #423d34;
+    --border: rgba(255,255,255,0.12);
+    --accent-sage: #8fbd9c;
+    --accent-terracotta: #e2986a;
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -41,7 +49,9 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
   background: var(--plane);
   color: var(--text-primary);
 }
@@ -67,20 +77,33 @@ nav.dash-nav a {
 }
 nav.dash-nav a.active {
   color: var(--text-primary);
-  border-bottom-color: var(--series-1);
+  border-bottom-color: var(--accent-terracotta);
 }
 nav.dash-nav a:hover { color: var(--text-primary); }
 
-header.page-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 20px; }
-h1 { font-size: 22px; margin: 0; }
+header.page-header {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--baseline);
+}
+h1 {
+  font-family: "Lora", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  font-size: 28px;
+  margin: 0;
+  color: var(--text-primary);
+}
 .asof { color: var(--text-secondary); font-size: 13px; }
 
 .stub-notice {
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 13px;
+  border-left: 3px solid var(--accent-terracotta);
+  border-radius: 4px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--text-secondary);
   margin-bottom: 20px;
 }
@@ -90,10 +113,17 @@ h1 { font-size: 22px; margin: 0; }
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 16px 18px;
 }
-.tile .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
-.tile .value { font-size: 28px; font-weight: 600; }
+.tile .label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.tile .value { font-size: 30px; font-weight: 600; font-family: "Lora", Georgia, serif; }
 .tile .value.critical { color: var(--critical); }
 .tile .value.good { color: var(--good); }
 
@@ -104,19 +134,27 @@ h1 { font-size: 22px; margin: 0; }
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
+  border-radius: 8px;
+  padding: 16px 18px;
   margin-bottom: 16px;
 }
-.panel h2 { font-size: 14px; margin: 0 0 12px; color: var(--text-secondary); font-weight: 600; }
+.panel h2 {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-weight: 700;
+}
 .chart-box { position: relative; height: 280px; }
 .chart-box.short { height: 200px; }
 .chart-box.tall { height: 360px; }
 
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); }
-th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--grid); }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: color-mix(in srgb, var(--accent-terracotta) 6%, transparent); }
 
 .status-pill {
   display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px;
@@ -138,10 +176,95 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .empty-state { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
 
+/* Status-over-time timeline (system-lookup.html) -- a plain colored strip
+   labeled with the actual status name, plus a readable list underneath.
+   Deliberately not a chart: a bar segment's width is the only thing a
+   reader has to interpret, and every segment carries its status as text. */
+.timeline-track {
+  display: flex;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.timeline-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+  border-right: 2px solid var(--surface-1);
+}
+.timeline-segment:last-child { border-right: none; }
+.timeline-endpoints {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  margin-bottom: 16px;
+}
+.timeline-legend { display: flex; flex-direction: column; gap: 8px; }
+.timeline-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.timeline-legend-row:nth-child(odd) { background: var(--plane); }
+.timeline-swatch {
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.timeline-legend-status { font-weight: 700; min-width: 150px; }
+.timeline-legend-range { color: var(--text-secondary); }
+
 /* Nested "what changed" diff table inside an expandable row */
 td table { margin: 6px 0; }
 td table th, td table td { padding: 4px 8px; font-size: 12px; }
-a.toggle-diff { font-size: 12px; white-space: nowrap; }
+a.toggle-diff { font-size: 12px; white-space: nowrap; color: var(--accent-sage); font-weight: 600; }
+
+/* Bubbly capsule bars (statewide breakdown, transitions, county/attribute
+   rankings) -- rounded pill tracks instead of square Chart.js bars. */
+.capsule-list { display: flex; flex-direction: column; gap: 9px; }
+.capsule-row { display: flex; align-items: center; gap: 10px; }
+.capsule-label { font-size: 12.5px; color: var(--text-primary); flex-shrink: 0; }
+.capsule-track { flex-grow: 1; background: var(--plane); border-radius: 999px; height: 15px; overflow: hidden; }
+.capsule-fill { height: 100%; border-radius: 999px; min-width: 3px; }
+.capsule-value { font-size: 12px; color: var(--text-secondary); text-align: right; flex-shrink: 0; white-space: nowrap; }
+
+/* Bubbly vertical bars (month/histogram charts, drawn as plain divs so the
+   rounded "bubbly" look the user asked for doesn't depend on a chart
+   library's bar-radius support). */
+.bubble-bars { display: flex; align-items: flex-end; gap: 10px; min-height: 140px; padding: 0 4px 4px; }
+.bubble-bar-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.bubble-bar { width: 100%; max-width: 46px; border-radius: 14px; min-height: 4px; }
+.bubble-bar-label { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px; }
+.bubble-bar-value { font-size: 11px; color: var(--text-primary); font-weight: 700; }
+
+.month-filter {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 6px 6px 14px; font-size: 13px; color: var(--text-secondary); white-space: nowrap;
+}
+.month-filter select { border: none; background: transparent; color: var(--text-primary); font-size: 13px; font-weight: 600; padding: 4px 6px; }
+
+.kpi-cards { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; margin-bottom: 20px; }
+@media (max-width: 760px) { .kpi-cards { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+/* Simple lat/long point map -- an equirectangular projection over CA's
+   bounding box, not a true basemap. Labeled as approximate wherever shown. */
+.point-map { width: 100%; height: 100%; display: block; background: var(--plane); border-radius: 8px; }
+.point-map circle { stroke: var(--surface-1); stroke-width: 0.6; }
 
 footer.page-footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
-a { color: var(--series-1); }
+a { color: var(--accent-sage); }
+a:hover { color: var(--text-primary); }

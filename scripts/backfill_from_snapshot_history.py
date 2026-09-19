@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Rebuilds data/history.jsonl, data/summary.jsonl, data/latest.json, and
-data/changes.jsonl from a Dataverse "SaferSnapshotHistory" CSV export --
-a genuine day-by-day archive (one row per system per day), as opposed to
-the changes-only export handled by backfill_changes_from_export.py.
+Rebuilds data/snapshots/<date>.json (one file per day), data/summary.jsonl,
+data/latest.json, and data/changes.jsonl from a Dataverse
+"SaferSnapshotHistory" CSV export -- a genuine day-by-day archive (one row
+per system per day), as opposed to the changes-only export handled by
+backfill_changes_from_export.py.
+
+This export doesn't carry the risk-assessment attribute/category fields
+(see fetch_snapshot.py's ATTRIBUTE_RISK_FIELDS / CATEGORY_RISK_FIELDS), so
+summary rows built here simply have those counts at zero -- the dashboard's
+month filter treats a month with no attribute data as "not available for
+this month" rather than showing misleading zeros as real counts.
 
 This is authoritative where it overlaps with anything already in data/: a
 real daily snapshot beats a status derived only from change events, so this
@@ -35,8 +42,11 @@ import os
 import sys
 from datetime import date, datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fetch_snapshot import summarize as shared_summarize  # noqa: E402
+
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-HISTORY_PATH = os.path.join(DATA_DIR, "history.jsonl")
+SNAPSHOTS_DIR = os.path.join(DATA_DIR, "snapshots")
 LATEST_PATH = os.path.join(DATA_DIR, "latest.json")
 SUMMARY_PATH = os.path.join(DATA_DIR, "summary.jsonl")
 CHANGES_PATH = os.path.join(DATA_DIR, "changes.jsonl")
@@ -69,25 +79,6 @@ def load_csv(path):
             }
             by_date.setdefault(snap_date, []).append(record)
     return by_date
-
-
-def summarize(records, snapshot_date):
-    by_status = {}
-    failing_count = 0
-    population_in_failing = 0
-    for r in records:
-        status = r["FINAL_SAFER_STATUS"] or "Unknown"
-        by_status[status] = by_status.get(status, 0) + 1
-        if r["CURRENT_FAILING"] == "Y":
-            failing_count += 1
-            population_in_failing += r["POPULATION"] or 0
-    return {
-        "date": snapshot_date,
-        "total_systems": len(records),
-        "currently_failing": failing_count,
-        "population_in_failing_systems": population_in_failing,
-        "by_status": by_status,
-    }
 
 
 def field_diffs(prev_row, new_row):
@@ -135,17 +126,18 @@ def main():
         sys.exit(1)
 
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
 
     all_changes = []
     all_summaries = []
     prev_records = None
-    with open(HISTORY_PATH, "w", encoding="utf-8") as hist_f:
-        for d in dates:
-            records = by_date[d]
-            hist_f.write(json.dumps({"date": d, "records": records}, separators=(",", ":")) + "\n")
-            all_summaries.append(summarize(records, d))
-            all_changes.extend(detect_changes(prev_records, records, d))
-            prev_records = records
+    for d in dates:
+        records = by_date[d]
+        with open(os.path.join(SNAPSHOTS_DIR, f"{d}.json"), "w", encoding="utf-8") as f:
+            json.dump({"date": d, "records": records}, f, separators=(",", ":"))
+        all_summaries.append(shared_summarize(records, d))
+        all_changes.extend(detect_changes(prev_records, records, d))
+        prev_records = records
 
     with open(SUMMARY_PATH, "w", encoding="utf-8") as f:
         for s in all_summaries:

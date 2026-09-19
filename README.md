@@ -21,22 +21,44 @@ GitHub Actions (daily cron)
   -> scripts/fetch_snapshot.py
   -> calls data.ca.gov's CKAN datastore_search_sql API (SELECT * -- see below)
   -> writes/updates:
-       data/latest.json     (today's full pull, overwritten daily)
-       data/summary.jsonl   (one small aggregate row per day, for trend charts)
-       data/history.jsonl   (one line per day, full pull -- the long-term archive)
-       data/changes.jsonl   (one line per detected FINAL_SAFER_STATUS change,
-                             with a full field-level diff of everything else
-                             that changed alongside it)
+       data/snapshots/<date>.json  (that day's full pull, one file per day --
+                                    never appended to, so looking up a past
+                                    month never means downloading every day
+                                    ever recorded)
+       data/latest.json            (a copy of the newest snapshot file)
+       data/summary.jsonl          (one small, compact aggregate row per day
+                                    -- by-status counts, by-county totals,
+                                    HIGH-risk counts per attribute, and a
+                                    risk-level distribution per category.
+                                    Stays small forever; this is what the
+                                    month filter on every page actually reads,
+                                    so picking a month never re-downloads
+                                    full per-system data)
+       data/changes.jsonl          (one line per detected FINAL_SAFER_STATUS
+                                    change, with a full field-level diff of
+                                    everything else that changed alongside it)
   -> commits and pushes the changes
 GitHub Pages
-  -> serves the four pages below, each of which fetches the relevant data/*
-     file directly and renders client-side. No backend, no build step.
+  -> serves the five pages below, each of which fetches the relevant data/*
+     file(s) directly and renders client-side. No backend, no build step.
 ```
 
-Every day's snapshot is both an explicit row in the `data/*.jsonl` files
+Every day's snapshot is both its own dated file under `data/snapshots/`
 **and** a git commit -- two independent layers of history, so "prove this
 system was Failing on date X" has an actual, checkable, dated record behind
 it (both the raw snapshot and the commit timestamp).
+
+### The month filter
+
+Statewide Trends and Failing System Details both have a "Viewing" dropdown.
+Picking a month doesn't just relabel the page -- every KPI, the status
+breakdown, the most-common-high-risk-attributes list, and the
+currently-failing table all recompute from that month's actual recorded
+data (`data/summary.jsonl` for the aggregates, a lazy on-demand fetch of
+that one day's `data/snapshots/<date>.json` for the system-level table).
+Nothing about those numbers is hardcoded to "today" -- they're genuinely
+derived from whichever month is selected, the same way "today's" numbers
+are.
 
 ### Why `SELECT *` instead of a fixed field list
 
@@ -60,11 +82,11 @@ kept in sync with the state's internal column names by hand.
 
 ## Backfilled history
 
-`data/` currently holds real data, not placeholder data: **17 days of full
-daily snapshots (Sep 2-18, 2026, ~3,190 systems/day)**, backfilled from a
-Dataverse "SaferSnapshotHistory" export via
-`scripts/backfill_from_snapshot_history.py`. That script rebuilds
-`history.jsonl`, `summary.jsonl`, `latest.json`, and `changes.jsonl` from
+`data/snapshots/` currently holds real data, not placeholder data: **17 days
+of full daily snapshots (Sep 2-18, 2026, ~3,190 systems/day)**, backfilled
+from a Dataverse "SaferSnapshotHistory" export via
+`scripts/backfill_from_snapshot_history.py`. That script rebuilds the
+`snapshots/` files, `summary.jsonl`, `latest.json`, and `changes.jsonl` from
 scratch by treating the export as ground truth and diffing consecutive days
 itself -- it's authoritative over the change-events-only import
 (`scripts/backfill_changes_from_export.py`), which is kept for whenever a
@@ -74,10 +96,12 @@ re-run either one against a new export.
 
 One real gap worth naming: this backfilled history has status, population,
 economic status, and failing-start-date per day, but not the underlying
-Failing-criteria fields (which specific violation, if any). That detail
-only starts accumulating once `fetch_snapshot.py` runs for real against the
-live wide flat file -- see "What Changed" on the dashboard for how that
-shows up (or doesn't yet) in practice.
+Failing-criteria fields (which specific violation, if any), the risk-
+assessment attribute/category detail, or system locations. That detail only
+starts accumulating once `fetch_snapshot.py` runs for real against the live
+wide flat file -- pages that depend on it (Most Common High-Risk Attributes,
+Risk Categories & Failing Criteria, the location maps) say so plainly for
+any date that predates it, rather than showing misleading zeros.
 
 **Note on the resource ID**: the value visible in your original screenshot
 (`25887bb-5451-4c19-8e35-27899ae8c3ad`) was missing a leading digit. I
@@ -87,27 +111,35 @@ couldn't call the live API from my own environment (blocked by network
 policy there, not a problem for GitHub's servers), treat the first real
 workflow run as the actual confirmation.
 
-## The four pages
+## The five pages
 
-- **`index.html` -- Statewide trends.** Changes this week / trailing 12
-  months, systems changed at least once, changes by month, a histogram of
-  how many times systems change, most common status transitions, top
-  counties, and a top-20-most-volatile-systems table.
 - **`system-lookup.html` -- Look up a system.** Filter by county, current
-  status, or name; see one system's status-over-time chart, its full change
-  history, and stat tiles (first Failing date, most recent change, changes in
-  the past 12 months, days since last change) -- mirrors your existing
-  Power BI page. Each change row has a "What changed?" toggle showing the
+  status, economic status, or name; see one system's status-over-time
+  timeline, its full change history, stat tiles (first Failing date, most
+  recent change, changes in the past 12 months, days since last change), its
+  Risk Categories & Failing Criteria breakdown (the 4 SAFER risk categories
+  and their 21 underlying indicators), and an approximate map of its
+  location. Each change row has a "What changed?" toggle showing the
   field-level diff behind it.
-- **`failing-focus.html` -- Failing systems focus.** The view built first:
-  failing-system counts and population-affected over time, status breakdown,
-  top counties, and the current failing-systems table.
-- **`what-changed.html` -- What changed.** Aggregates the field-level diffs
+- **`index.html` -- Statewide trends.** KPI tiles, changes by month, a
+  histogram of how many times systems change, most common status
+  transitions, top counties, the statewide status breakdown (count + percent
+  per status), a top-systems-by-changes table, and a location map colored by
+  status. Has the month filter -- see above.
+- **`failing-focus.html` -- Failing System Details.** 4 KPI cards (systems
+  failing, share of systems, share of population, counties affected),
+  failing-systems-and-population-affected over time, the real Most Common
+  High-Risk Attributes ranking, and the current failing-systems table. Has
+  the month filter -- see above.
+- **`what-changed.html` -- Deeper dive on changes.** Aggregates the field-level diffs
   across every tracked change to answer "what usually pushes a system into
   Failing" and "what usually resolves it," plus a filterable, drill-into-any-event
   table of recent changes statewide.
+- **`about.html` -- About this page.** What the tool does, what the four
+  statuses mean, how it's built, real coverage numbers (system count, dates
+  tracked since), and data-quality caveats.
 
-All four share `assets/style.css` and `assets/common.js`, and a nav bar links
+All five share `assets/style.css` and `assets/common.js`, and a nav bar links
 between them.
 
 ## One real limitation, stated plainly
@@ -176,12 +208,17 @@ independent site.
 
 ## Maintenance notes
 
-- **Repo size**: `history.jsonl` now stores every column for every system,
-  every day (previously just 9 fields), so it grows faster than the earlier
-  version of this project. `summary.jsonl` and `changes.jsonl` stay small
-  regardless and are what the dashboards actually depend on day to day, so
-  if `history.jsonl` ever becomes a size concern, it can be pruned or moved
-  to quarterly archives without breaking any of the four pages.
+- **Repo size**: each `data/snapshots/<date>.json` file stores every column
+  for every system for that one day (~5-6 MB per day once the live API is
+  the source, since it's a wide ~140-column table). That adds up over a
+  year, but unlike the old single-ever-growing-file design, no page load
+  ever has to download more than one day's worth of it -- `summary.jsonl`
+  (small, one compact row per day, forever) is what every KPI, chart, and
+  the month filter actually depend on day to day. If `data/snapshots/`
+  becomes a repo-size concern down the line, older files can be moved to a
+  separate archive branch or storage without breaking anything: no page
+  reads more than the latest snapshot plus whichever one date the month
+  filter is currently showing.
 - **If a fetch fails** (data.ca.gov downtime, schema change, etc.), the
   workflow run fails and shows up in the Actions tab; the dashboard just
   keeps showing the last successful snapshot until the next run succeeds.

@@ -4,16 +4,27 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Statewide Trends — CA SAFER Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;600;700;800&display=swap" />
 <link rel="stylesheet" href="assets/style.css" />
-<script src="assets/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="wrap">
   <nav class="dash-nav" id="nav"></nav>
 
   <header class="page-header">
-    <h1>Statewide Status-Change Trends</h1>
-    <div class="asof" id="asof">Loading&hellip;</div>
+    <div>
+      <h1>Statewide Status-Change Trends</h1>
+      <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">How SAFER statuses are shifting across California.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="month-filter">
+        Viewing
+        <select id="filter-month"><option value="">All months</option></select>
+      </div>
+      <div class="asof" id="asof">Loading&hellip;</div>
+    </div>
   </header>
 
   <div class="stub-notice" id="stub-notice" style="display:none">
@@ -23,47 +34,60 @@
     retroactively), so give it a few weeks before these numbers get meaningful.
   </div>
 
-  <div class="tiles">
-    <div class="tile"><div class="label">Status changes this week</div><div class="value" id="tile-week">&mdash;</div></div>
-    <div class="tile"><div class="label">Status changes, trailing 12mo</div><div class="value" id="tile-12mo">&mdash;</div></div>
-    <div class="tile"><div class="label">Systems changed at least once (12mo)</div><div class="value" id="tile-pct">&mdash;</div></div>
-    <div class="tile"><div class="label" id="tile-total-label">Systems tracked</div><div class="value" id="tile-total">&mdash;</div></div>
-  </div>
+  <div class="kpi-cards" id="kpi-cards"></div>
 
   <div class="panels">
     <div class="panel">
-      <h2>Status changes by month, statewide</h2>
-      <div class="chart-box"><canvas id="monthChart"></canvas></div>
+      <h2 id="month-chart-title">Status Changes by Month, Statewide</h2>
+      <div id="monthChart"></div>
     </div>
     <div class="panel">
-      <h2>Systems by number of changes (12mo)</h2>
-      <div class="chart-box"><canvas id="histChart"></canvas></div>
+      <h2 id="hist-chart-title">Systems by Number of Changes</h2>
+      <div id="histChart"></div>
     </div>
   </div>
 
   <div class="panels">
     <div class="panel">
-      <h2>Most common status transitions</h2>
-      <div class="chart-box tall"><canvas id="transitionChart"></canvas></div>
+      <h2 id="transition-title">Most Common Status Transitions</h2>
+      <div class="capsule-list" id="transitionList"></div>
     </div>
     <div class="panel">
-      <h2>Top counties by number of changes</h2>
-      <div class="chart-box tall"><canvas id="countyChart"></canvas></div>
+      <h2 id="county-changes-title">Top Counties by Number of Changes</h2>
+      <div class="capsule-list" id="countyChangesList"></div>
     </div>
   </div>
 
   <div class="panel">
-    <h2>Top 20 systems by number of changes (12mo)</h2>
+    <h2>Statewide Status Breakdown</h2>
+    <div class="capsule-list" id="statusBreakdown"></div>
+  </div>
+
+  <div class="panel">
+    <h2 id="top-systems-title">Top 20 Systems by Number of Changes</h2>
     <table>
-      <thead><tr><th>System</th><th>County</th><th class="num">Changes (12mo)</th><th>Current status</th></tr></thead>
+      <thead><tr><th>System</th><th>County</th><th class="num">Changes</th><th>Status</th></tr></thead>
       <tbody id="top-systems-table"></tbody>
     </table>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;">
+        <h2 style="margin-bottom:6px;">System Locations, by Status</h2>
+        <span style="font-size:11px;color:var(--muted);font-style:italic;">Approximate positions (simple lat/long projection, not official boundaries)</span>
+      </div>
+      <div style="height:340px;" id="pointMap"></div>
+    </div>
+    <div class="panel">
+      <h2 id="county-failing-title">Top Counties by Failing Systems</h2>
+      <div class="capsule-list" id="countyFailingList"></div>
+    </div>
   </div>
 
   <footer class="page-footer">
     Source: <a href="https://data.ca.gov/dataset/safer-failing-and-at-risk-drinking-water-systems" target="_blank" rel="noopener">CA SAFER dataset, data.ca.gov</a>.
     Change history tracked daily starting from this tool's first snapshot. Built by Darcy Bostic.
-    <span id="partial-footnote" style="display:none;">&nbsp;* Only counts systems seen in the change log so far, not the full statewide system count.</span>
   </footer>
 </div>
 
@@ -73,11 +97,17 @@ const EXAMPLE = {
   latest: {
     date: "2026-09-17",
     records: [
-      { WATER_SYSTEM_NUMBER: "CA3901031", SYSTEM_NAME: "132 Investments Water System", COUNTY: "San Joaquin", FINAL_SAFER_STATUS: "Not At-Risk" },
-      { WATER_SYSTEM_NUMBER: "CA4410222", SYSTEM_NAME: "Sample Rural System 5", COUNTY: "Monterey", FINAL_SAFER_STATUS: "Potentially At-Risk" },
-      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", FINAL_SAFER_STATUS: "Failing" }
+      { WATER_SYSTEM_NUMBER: "CA3901031", SYSTEM_NAME: "132 Investments Water System", COUNTY: "San Joaquin", FINAL_SAFER_STATUS: "Not At-Risk", LATITUDE_MEASURE: 37.9, LONGITUDE_MEASURE: -121.3 },
+      { WATER_SYSTEM_NUMBER: "CA4410222", SYSTEM_NAME: "Sample Rural System 5", COUNTY: "Monterey", FINAL_SAFER_STATUS: "Potentially At-Risk", LATITUDE_MEASURE: 36.3, LONGITUDE_MEASURE: -121.4 },
+      { WATER_SYSTEM_NUMBER: "CA1010999", SYSTEM_NAME: "Example Mutual Water Co.", COUNTY: "Tulare", FINAL_SAFER_STATUS: "Failing", LATITUDE_MEASURE: 36.2, LONGITUDE_MEASURE: -119.3 }
     ]
   },
+  summary: [
+    { date: "2026-09-17", total_systems: 3, currently_failing: 1, total_population: 926, population_in_failing_systems: 412,
+      by_status: { "Not At-Risk": 1, "Potentially At-Risk": 1, "Failing": 1 },
+      by_county: { "San Joaquin": { total: 1, failing: 0, population: 55, population_failing: 0 }, "Tulare": { total: 1, failing: 1, population: 412, population_failing: 412 } },
+      high_risk_attribute_counts: {}, category_risk_levels: {} }
+  ],
   changes: [
     { date: "2026-09-04", water_system_number: "CA3901031", system_name: "132 Investments Water System", county: "San Joaquin", from_status: "Not At-Risk", to_status: "Failing" },
     { date: "2026-09-06", water_system_number: "CA3901031", system_name: "132 Investments Water System", county: "San Joaquin", from_status: "Failing", to_status: "Potentially At-Risk" },
@@ -87,161 +117,235 @@ const EXAMPLE = {
   ]
 };
 
-let LATEST, CHANGES, isExample, isPartialLatest;
+const STATUS_COLOR_HEX = {
+  "Not At-Risk": "--good", "Potentially At-Risk": "--serious", "At-Risk": "--warning",
+  "Failing": "--critical", "Not Assessed": "--muted", "Unknown": "--muted",
+};
 
-function render() {
-  document.getElementById("asof").textContent = `As of ${LATEST.date}`;
-  const notice = document.getElementById("stub-notice");
-  if (isExample) {
-    notice.style.display = "block";
-  } else if (isPartialLatest) {
-    notice.style.display = "block";
-    notice.innerHTML = "Real change history, but the \"systems tracked\" figure below only counts systems that have changed status so far &mdash; it isn't the full statewide system count yet. That fills in once the daily snapshot has run against the live API.";
+let LATEST, CHANGES, SUMMARY, isExample;
+let monthSnapshotCache = {};
+
+function bubbleBars(containerId, entries, colorVar) {
+  const el = document.getElementById(containerId);
+  if (entries.length === 0) { el.innerHTML = `<div class="empty-state">No data yet.</div>`; return; }
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  const MAX_PX = 100;
+  el.innerHTML = `<div class="bubble-bars">` + entries.map(([label, value, colorOverride]) => {
+    const h = Math.max(Math.round((value / max) * MAX_PX), 4);
+    const color = colorOverride || getVar(colorVar);
+    return `
+      <div class="bubble-bar-col">
+        <div class="bubble-bar-value">${fmt.format(value)}</div>
+        <div class="bubble-bar" style="height:${h}px;background:${color};"></div>
+        <div class="bubble-bar-label" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+      </div>`;
+  }).join("") + `</div>`;
+}
+
+function capsuleList(containerId, entries, colorVar, opts) {
+  opts = opts || {};
+  const el = document.getElementById(containerId);
+  if (entries.length === 0) { el.innerHTML = `<div class="empty-state">No data yet.</div>`; return; }
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  el.innerHTML = entries.map(([label, value, note, colorOverride]) => {
+    const widthPct = Math.max((value / max) * 100, 3);
+    const color = colorOverride || getVar(colorVar);
+    const valueText = note != null ? note : fmt.format(value);
+    return `
+      <div class="capsule-row">
+        <div class="capsule-label" style="width:${opts.labelWidth || 160}px;flex-shrink:0;">${escapeHtml(label)}</div>
+        <div class="capsule-track"><div class="capsule-fill" style="width:${widthPct}%;background:${color};"></div></div>
+        <div class="capsule-value" style="width:${opts.valueWidth || 90}px;">${valueText}</div>
+      </div>`;
+  }).join("");
+}
+
+function renderKpis(month, row, monthChanges, allChanges) {
+  const cards = [];
+  if (!month) {
+    const cutoffWeek = new Date(); cutoffWeek.setDate(cutoffWeek.getDate() - 7);
+    const cutoff12mo = monthsAgo(12);
+    const changesWeek = allChanges.filter(c => new Date(c.date) >= cutoffWeek);
+    const changes12mo = allChanges.filter(c => new Date(c.date) >= cutoff12mo);
+    const systemsChanged = new Set(changes12mo.map(c => c.water_system_number));
+    cards.push(
+      { label: "Status changes this week", value: fmt.format(changesWeek.length) },
+      { label: "Status changes, trailing 12mo", value: fmt.format(changes12mo.length) },
+      { label: "Systems changed at least once (12mo)", value: `${fmt.format(systemsChanged.size)} (${((systemsChanged.size / Math.max(row.total_systems, 1)) * 100).toFixed(1)}%)` },
+      { label: "Systems tracked", value: fmt.format(row.total_systems) },
+    );
   } else {
-    notice.style.display = "none";
+    const systemsChanged = new Set(monthChanges.map(c => c.water_system_number));
+    const failingPct = ((row.currently_failing / Math.max(row.total_systems, 1)) * 100).toFixed(1);
+    cards.push(
+      { label: `Status changes in ${monthLabel(month)}`, value: fmt.format(monthChanges.length) },
+      { label: "Systems changed at least once", value: `${fmt.format(systemsChanged.size)} (${((systemsChanged.size / Math.max(row.total_systems, 1)) * 100).toFixed(1)}%)` },
+      { label: "Systems tracked", value: fmt.format(row.total_systems) },
+      { label: "Systems Failing", value: `${fmt.format(row.currently_failing)} (${failingPct}%)` },
+    );
   }
+  document.getElementById("kpi-cards").innerHTML = cards.map(c => `
+    <div class="tile"><div class="label">${escapeHtml(c.label)}</div><div class="value">${c.value}</div></div>
+  `).join("");
+}
 
-  const cutoff12mo = monthsAgo(12);
-  const cutoffWeek = new Date(); cutoffWeek.setDate(cutoffWeek.getDate() - 7);
+function renderStatusBreakdown(row) {
+  const entries = Object.entries(row.by_status || {})
+    .sort((a, b) => (STATUS_SEVERITY[a[0]] ?? 98) - (STATUS_SEVERITY[b[0]] ?? 98));
+  const total = row.total_systems || entries.reduce((s, e) => s + e[1], 0);
+  const withNotes = entries.map(([status, count]) => {
+    const pct = total ? ((count / total) * 100).toFixed(1) : "0.0";
+    return [status, count, `${fmt.format(count)} · ${pct}%`, statusColor(status)];
+  });
+  capsuleList("statusBreakdown", withNotes, "--series-1", { labelWidth: 160, valueWidth: 120 });
+}
 
-  const changes12mo = CHANGES.filter(c => new Date(c.date) >= cutoff12mo);
-  const changesWeek = CHANGES.filter(c => new Date(c.date) >= cutoffWeek);
-  const systemsChanged12mo = new Set(changes12mo.map(c => c.water_system_number));
+function renderCountyFailing(row) {
+  const entries = Object.entries(row.by_county || {})
+    .filter(([, v]) => v.failing > 0)
+    .sort((a, b) => b[1].failing - a[1].failing)
+    .slice(0, 10)
+    .map(([county, v]) => [titleCase(county), v.failing, `${fmt.format(v.failing)} of ${fmt.format(v.total)}`]);
+  capsuleList("countyFailingList", entries, "--critical", { labelWidth: 130, valueWidth: 90 });
+}
 
-  document.getElementById("tile-week").textContent = fmt.format(changesWeek.length);
-  document.getElementById("tile-12mo").textContent = fmt.format(changes12mo.length);
-  document.getElementById("tile-total").textContent = fmt.format(LATEST.records.length) + (isPartialLatest ? "*" : "");
-  document.getElementById("tile-total-label").textContent =
-    isPartialLatest ? "Systems with tracked changes*" : "Systems tracked";
-  if (isPartialLatest) {
-    document.getElementById("tile-pct").textContent = `${fmt.format(systemsChanged12mo.size)} of ${fmt.format(LATEST.records.length)}*`;
-  } else {
-    document.getElementById("tile-pct").textContent =
-      `${fmt.format(systemsChanged12mo.size)} (${((systemsChanged12mo.size / Math.max(LATEST.records.length, 1)) * 100).toFixed(1)}%)`;
+async function statusMapForRow(row) {
+  // Prefer a full per-system snapshot for the exact date this row covers
+  // (needed for lat/long); LATEST is used only when it's the same date.
+  if (LATEST && LATEST.date === row.date) return LATEST.records;
+  if (monthSnapshotCache[row.date] !== undefined) return monthSnapshotCache[row.date];
+  const snap = await loadSnapshotForDate(row.date);
+  monthSnapshotCache[row.date] = snap ? snap.records : null;
+  return monthSnapshotCache[row.date];
+}
+
+async function renderPointMapForRow(row) {
+  const container = document.getElementById("pointMap");
+  const records = await statusMapForRow(row);
+  if (!records) {
+    container.innerHTML = `<div class="empty-state">Per-system location data isn't available for ${monthLabel(monthKey(row.date)) || "this date"} yet.</div>`;
+    return;
   }
+  const points = records
+    .filter(r => r.LATITUDE_MEASURE != null && r.LONGITUDE_MEASURE != null)
+    .map(r => ({
+      lat: parseFloat(r.LATITUDE_MEASURE),
+      lon: parseFloat(r.LONGITUDE_MEASURE),
+      color: statusColor((r.FINAL_SAFER_STATUS || "").trim()),
+      r: statusClass(r.FINAL_SAFER_STATUS) === "Failing" ? 3.4 : 2.2,
+      title: `${r.SYSTEM_NAME || r.WATER_SYSTEM_NUMBER} — ${r.FINAL_SAFER_STATUS || ""}`,
+    }));
+  renderPointMap(container, points, { width: 480, height: 420 });
+}
 
-  // Changes by month, statewide
-  const byMonth = {};
-  CHANGES.forEach(c => {
-    const m = c.date.slice(0, 7);
-    byMonth[m] = (byMonth[m] || 0) + 1;
-  });
-  const months = Object.keys(byMonth).sort();
-  new Chart(document.getElementById("monthChart"), {
-    type: "bar",
-    data: {
-      labels: months,
-      datasets: [{ data: months.map(m => byMonth[m]), backgroundColor: getVar("--series-1"), borderRadius: 4, maxBarThickness: 36 }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: getVar("--muted") } },
-        y: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted"), precision: 0 } }
-      }
-    }
-  });
+async function renderTopSystems(month, monthChanges, allChanges, row) {
+  const source = month ? monthChanges : (() => {
+    const cutoff12mo = monthsAgo(12);
+    return allChanges.filter(c => new Date(c.date) >= cutoff12mo);
+  })();
+  document.getElementById("top-systems-title").textContent =
+    month ? `Systems by Number of Changes in ${monthLabel(month)}` : "Top 20 Systems by Number of Changes (12mo)";
 
-  // Systems by number of changes (histogram over 12mo window)
   const changeCountBySystem = {};
-  changes12mo.forEach(c => { changeCountBySystem[c.water_system_number] = (changeCountBySystem[c.water_system_number] || 0) + 1; });
-  const histBuckets = {};
-  Object.values(changeCountBySystem).forEach(n => { histBuckets[n] = (histBuckets[n] || 0) + 1; });
-  const bucketKeys = Object.keys(histBuckets).map(Number).sort((a, b) => a - b);
-  new Chart(document.getElementById("histChart"), {
-    type: "bar",
-    data: {
-      labels: bucketKeys.map(k => `${k} change${k === 1 ? "" : "s"}`),
-      datasets: [{ data: bucketKeys.map(k => histBuckets[k]), backgroundColor: getVar("--series-3"), borderRadius: 4, maxBarThickness: 36 }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: getVar("--muted") } },
-        y: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted"), precision: 0 } }
-      }
-    }
-  });
-
-  // Most common transitions
-  const transitionCounts = {};
-  CHANGES.forEach(c => {
-    const key = `${c.from_status} → ${c.to_status}`;
-    transitionCounts[key] = (transitionCounts[key] || 0) + 1;
-  });
-  const topTransitions = Object.entries(transitionCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  new Chart(document.getElementById("transitionChart"), {
-    type: "bar",
-    data: {
-      labels: topTransitions.map(t => t[0]),
-      datasets: [{ data: topTransitions.map(t => t[1]), backgroundColor: getVar("--series-2"), borderRadius: 4, maxBarThickness: 24 }]
-    },
-    options: {
-      indexAxis: "y",
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted"), precision: 0 } },
-        y: { grid: { display: false }, ticks: { color: getVar("--text-primary") } }
-      }
-    }
-  });
-
-  // Top counties by number of changes
-  const countyCounts = {};
-  CHANGES.forEach(c => { countyCounts[c.county || "Unknown"] = (countyCounts[c.county || "Unknown"] || 0) + 1; });
-  const topCounties = Object.entries(countyCounts).sort((a, b) => b[1] - a[1]).slice(0, 12);
-  new Chart(document.getElementById("countyChart"), {
-    type: "bar",
-    data: {
-      labels: topCounties.map(c => c[0]),
-      datasets: [{ data: topCounties.map(c => c[1]), backgroundColor: getVar("--series-1"), borderRadius: 4, maxBarThickness: 24 }]
-    },
-    options: {
-      indexAxis: "y",
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: getVar("--grid") }, ticks: { color: getVar("--muted"), precision: 0 } },
-        y: { grid: { display: false }, ticks: { color: getVar("--text-primary") } }
-      }
-    }
-  });
-
-  // Top 20 systems by number of changes
-  const statusBySystem = {};
-  LATEST.records.forEach(r => { statusBySystem[r.WATER_SYSTEM_NUMBER] = r; });
+  source.forEach(c => { changeCountBySystem[c.water_system_number] = (changeCountBySystem[c.water_system_number] || 0) + 1; });
   const top20 = Object.entries(changeCountBySystem).sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+  const records = month ? await statusMapForRow(row) : (LATEST ? LATEST.records : []);
+  const byId = {};
+  (records || []).forEach(r => { byId[r.WATER_SYSTEM_NUMBER] = r; });
+
   const tbody = document.getElementById("top-systems-table");
   tbody.innerHTML = "";
   top20.forEach(([wsn, count]) => {
-    const rec = statusBySystem[wsn] || {};
-    const sample = CHANGES.find(c => c.water_system_number === wsn) || {};
+    const rec = byId[wsn] || {};
+    const sample = source.find(c => c.water_system_number === wsn) || {};
+    const status = rec.FINAL_SAFER_STATUS || sample.to_status || "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><a href="system-lookup.html">${escapeHtml(rec.SYSTEM_NAME || sample.system_name || wsn)}</a></td>
-      <td>${escapeHtml(rec.COUNTY || sample.county || "")}</td>
+      <td>${escapeHtml(titleCase(rec.COUNTY || sample.county || ""))}</td>
       <td class="num">${fmt.format(count)}</td>
-      <td><span class="status-pill ${statusClass(rec.FINAL_SAFER_STATUS)}">${escapeHtml(rec.FINAL_SAFER_STATUS || "")}</span></td>
+      <td><span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span></td>
     `;
     tbody.appendChild(tr);
   });
   if (top20.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No changes recorded in the trailing 12 months yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No changes recorded ${month ? `in ${monthLabel(month)}` : "in the trailing 12 months"} yet.</td></tr>`;
   }
+}
+
+async function render(month) {
+  const row = summaryRowForMonth(SUMMARY, month) || SUMMARY[SUMMARY.length - 1];
+  if (!row) return;
+
+  document.getElementById("asof").textContent = month ? `Showing ${monthLabel(month)}` : `As of ${row.date}`;
+
+  const monthChanges = month ? CHANGES.filter(c => monthKey(c.date) === month) : [];
+
+  renderKpis(month, row, monthChanges, CHANGES);
+  renderStatusBreakdown(row);
+  renderCountyFailing(row);
+  document.getElementById("county-failing-title").textContent =
+    month ? `Top Counties by Failing Systems — ${monthLabel(month)}` : "Top Counties by Failing Systems";
+
+  // Status changes by month, statewide -- always the full timeline, with
+  // the selected month picked out in terracotta so it's easy to place in
+  // context; unaffected by the selector otherwise.
+  const byMonth = {};
+  CHANGES.forEach(c => { const m = monthKey(c.date); byMonth[m] = (byMonth[m] || 0) + 1; });
+  const months = Object.keys(byMonth).sort();
+  bubbleBars("monthChart", months.map(m => [monthLabel(m).replace(/ \d{4}$/, ""), byMonth[m], m === month ? getVar("--accent-terracotta") : null]), "--accent-sage");
+
+  // Systems by number of changes -- scoped to the selected month, or the
+  // trailing-12mo window when "All months" is selected.
+  const histSource = month ? monthChanges : CHANGES.filter(c => new Date(c.date) >= monthsAgo(12));
+  document.getElementById("hist-chart-title").textContent =
+    month ? `Systems by Number of Changes — ${monthLabel(month)}` : "Systems by Number of Changes (trailing 12mo)";
+  const changeCountBySystem = {};
+  histSource.forEach(c => { changeCountBySystem[c.water_system_number] = (changeCountBySystem[c.water_system_number] || 0) + 1; });
+  const histBuckets = {};
+  Object.values(changeCountBySystem).forEach(n => { histBuckets[n] = (histBuckets[n] || 0) + 1; });
+  const bucketKeys = Object.keys(histBuckets).map(Number).sort((a, b) => a - b);
+  bubbleBars("histChart", bucketKeys.map(k => [`${k} change${k === 1 ? "" : "s"}`, histBuckets[k]]), "--series-3");
+
+  // Most common transitions + top counties by changes, scoped the same way.
+  document.getElementById("transition-title").textContent =
+    month ? `Most Common Transitions — ${monthLabel(month)}` : "Most Common Status Transitions (trailing 12mo)";
+  document.getElementById("county-changes-title").textContent =
+    month ? `Top Counties by Changes — ${monthLabel(month)}` : "Top Counties by Number of Changes (trailing 12mo)";
+
+  const transitionCounts = {};
+  histSource.forEach(c => { const k = `${c.from_status} → ${c.to_status}`; transitionCounts[k] = (transitionCounts[k] || 0) + 1; });
+  capsuleList("transitionList", Object.entries(transitionCounts).sort((a, b) => b[1] - a[1]).slice(0, 8), "--series-2", { labelWidth: 190, valueWidth: 40 });
+
+  const countyChangeCounts = {};
+  histSource.forEach(c => { const county = titleCase(c.county || "Unknown"); countyChangeCounts[county] = (countyChangeCounts[county] || 0) + 1; });
+  capsuleList("countyChangesList", Object.entries(countyChangeCounts).sort((a, b) => b[1] - a[1]).slice(0, 8), "--series-1", { labelWidth: 130, valueWidth: 40 });
+
+  await Promise.all([
+    renderTopSystems(month, monthChanges, CHANGES, row),
+    renderPointMapForRow(row),
+  ]);
 }
 
 renderNav("nav", "index.html");
 
+document.getElementById("filter-month").addEventListener("change", e => render(e.target.value));
+
 (async function init() {
-  const [latestResult, changesResult] = await Promise.all([
+  const [latestResult, changesResult, summaryResult] = await Promise.all([
     loadOrExample(() => loadJson("data/latest.json"), EXAMPLE.latest),
     loadOrExample(() => loadJsonl("data/changes.jsonl"), EXAMPLE.changes),
+    loadOrExample(() => loadJsonl("data/summary.jsonl"), EXAMPLE.summary),
   ]);
   LATEST = latestResult.data;
   CHANGES = changesResult.data;
-  isExample = latestResult.isExample || changesResult.isExample;
-  isPartialLatest = !latestResult.isExample && LATEST.partial === true;
-  document.getElementById("partial-footnote").style.display = isPartialLatest ? "inline" : "none";
-  render();
+  SUMMARY = summaryResult.data;
+  isExample = latestResult.isExample || changesResult.isExample || summaryResult.isExample;
+  document.getElementById("stub-notice").style.display = isExample ? "block" : "none";
+
+  populateMonthSelect(document.getElementById("filter-month"), SUMMARY, "All months");
+  await render("");
 })();
 </script>
 </body>

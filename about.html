@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>About This Page — CA SAFER Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;600;700;800&display=swap" />
+<link rel="stylesheet" href="assets/style.css" />
+<style>
+  .about-body { max-width: 760px; font-size: 14.5px; line-height: 1.75; color: var(--text-primary); }
+  .about-hr { height: 1px; background: var(--baseline); border: none; margin: 30px 0; }
+  .about-tag { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .about-tag-dash { display: inline-block; width: 18px; height: 2px; background: var(--accent-terracotta); }
+  .about-title { font-family: "Lora", Georgia, serif; font-size: 26px; font-weight: 600; color: var(--text-primary); margin: 0 0 12px; }
+  .status-legend-row { font-size: 14.5px; line-height: 1.6; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="dash-nav" id="nav"></nav>
+
+  <header class="page-header" style="border-bottom:none;padding-bottom:0;margin-bottom:8px;">
+    <h1 style="font-size:38px;">About this page</h1>
+  </header>
+
+  <section>
+    <div class="about-tag"><span class="about-tag-dash"></span>Mission &middot; TAP Support &middot; Data Transparency</div>
+    <div class="about-title">What this tool does</div>
+    <div class="about-body">
+      California's water systems move in and out of SAFER compliance often, but the state doesn't publish a dated,
+      public archive of daily status &mdash; only the current snapshot. That makes it hard for water systems and
+      Technical Assistance Providers to prove a system was Failing (or wasn't) on a specific past date for grant
+      eligibility and funding-prioritization purposes. This tool builds that archive, one day at a time, and
+      surfaces it as something you can search, filter, and cite.
+    </div>
+  </section>
+
+  <hr class="about-hr">
+
+  <section>
+    <div class="about-tag"><span class="about-tag-dash"></span>SAFER Statuses</div>
+    <div class="about-title">What the four statuses mean</div>
+    <div class="about-body">
+      <div class="status-legend-row"><strong style="color:var(--good);">Not At-Risk</strong> &mdash; currently meeting drinking water standards.</div>
+      <div class="status-legend-row"><strong style="color:var(--serious);">Potentially At-Risk</strong> &mdash; early warning signs the Risk Assessment flags.</div>
+      <div class="status-legend-row"><strong style="color:#8a5a00;">At-Risk</strong> &mdash; meaningful risk of failing without intervention.</div>
+      <div class="status-legend-row"><strong style="color:var(--critical);">Failing</strong> &mdash; not meeting standards right now (the HR2W Failing list).</div>
+    </div>
+  </section>
+
+  <hr class="about-hr">
+
+  <section>
+    <div class="about-tag"><span class="about-tag-dash"></span>Methodology &middot; Automation</div>
+    <div class="about-title">How we built this</div>
+    <div class="about-body">
+      A script pulls the state's full SAFER risk-assessment data every day, compares it to the day before, and
+      commits any changes &mdash; including which specific field moved &mdash; to a permanent, dated history.
+      Nothing is edited after the fact, so what you see for a past date is exactly what was recorded that day.
+      Each day's full pull is kept as its own file, so looking up a past month never means downloading the whole
+      history at once.
+    </div>
+  </section>
+
+  <hr class="about-hr">
+
+  <section>
+    <div class="about-tag"><span class="about-tag-dash"></span>Scope</div>
+    <div class="about-title">Coverage</div>
+    <div class="about-body"><span style="font-family:'Lora',Georgia,serif;font-size:22px;font-weight:600;color:var(--text-primary);" id="coverage-count">&mdash;</span> tracked daily, statewide, since <span id="coverage-since">&mdash;</span>.</div>
+  </section>
+
+  <hr class="about-hr">
+
+  <section>
+    <div class="about-tag"><span class="about-tag-dash"></span>Caveats &middot; Sources</div>
+    <div class="about-title">Data quality &amp; methods</div>
+    <div class="about-body">
+      The Failing list updates daily; the broader Risk Assessment (and the indicators behind At-Risk and
+      Potentially At-Risk) refreshes quarterly, so most days show no Risk Assessment movement even when the
+      Failing list does. History before this tool existed was backfilled from an earlier internal export, which
+      recorded status changes but not the specific violation behind each one, and doesn't include the risk-assessment
+      attribute/category detail (or system locations) that snapshots pulled from the live API carry going forward.
+      Source: California State Water Resources Control Board, SAFER dataset, data.ca.gov.
+    </div>
+  </section>
+
+  <footer class="page-footer">
+    Source: <a href="https://data.ca.gov/dataset/safer-failing-and-at-risk-drinking-water-systems" target="_blank" rel="noopener">CA SAFER dataset, data.ca.gov</a>.
+    Built by Darcy Bostic.
+  </footer>
+</div>
+
+<script src="assets/common.js"></script>
+<script>
+renderNav("nav", "about.html");
+
+(async function init() {
+  const [latestResult, summaryResult] = await Promise.all([
+    loadOrExample(() => loadJson("data/latest.json"), { date: "—", records: new Array(3190).fill(0) }),
+    loadOrExample(() => loadJsonl("data/summary.jsonl"), [{ date: "2026-09-02" }]),
+  ]);
+  const latest = latestResult.data;
+  const summaryRows = summaryResult.data;
+  const earliest = summaryRows.length ? summaryRows.map(r => r.date).sort()[0] : latest.date;
+  document.getElementById("coverage-count").textContent = `${fmt.format(latest.records.length)} systems`;
+  document.getElementById("coverage-since").textContent = earliest;
+})();
+</script>
+</body>
+</html>

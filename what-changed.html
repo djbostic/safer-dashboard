@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>What Changed — CA SAFER Dashboard</title>
+<title>Deeper Dive on Changes — CA SAFER Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;600;700;800&display=swap" />
 <link rel="stylesheet" href="assets/style.css" />
 <script src="assets/chart.umd.min.js"></script>
 </head>
@@ -12,7 +15,7 @@
   <nav class="dash-nav" id="nav"></nav>
 
   <header class="page-header">
-    <h1>What Changed</h1>
+    <h1>Deeper Dive on Changes</h1>
     <div class="asof" id="asof">Loading&hellip;</div>
   </header>
 
@@ -131,7 +134,7 @@ function renderChangesTable(direction) {
     tr.innerHTML = `
       <td>${escapeHtml(c.date)}</td>
       <td>${escapeHtml(c.system_name || c.water_system_number)}</td>
-      <td>${escapeHtml(c.county || "")}</td>
+      <td>${escapeHtml(titleCase(c.county || ""))}</td>
       <td><span class="status-pill ${statusClass(c.from_status)}">${escapeHtml(c.from_status)}</span></td>
       <td><span class="status-pill ${statusClass(c.to_status)}">${escapeHtml(c.to_status)}</span></td>
       <td><a href="#" class="toggle-diff" data-target="${detailId}">What changed?</a></td>
