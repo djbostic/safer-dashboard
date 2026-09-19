@@ -26,6 +26,12 @@
     at first even with real current-status data.
   </div>
 
+  <div style="position:relative;max-width:520px;margin-bottom:14px;">
+    <input type="search" id="search-system" placeholder="Search by system name or PWSID&hellip;" autocomplete="off"
+      style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:15px;" />
+    <div id="search-results" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:20;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(36,35,31,0.14);max-height:320px;overflow-y:auto;"></div>
+  </div>
+
   <div class="filters">
     <label>County
       <select id="filter-county"><option value="">All</option></select>
@@ -103,7 +109,7 @@
     <div class="panel">
       <div style="display:flex;align-items:baseline;justify-content:space-between;">
         <h2 style="margin-bottom:6px;">System Location</h2>
-        <span style="font-size:11px;color:var(--muted);font-style:italic;">Approximate position (simple lat/long projection, not official boundaries)</span>
+        <span style="font-size:11px;color:var(--muted);font-style:italic;">Approximate position, not official boundaries &middot; scroll to zoom, drag to pan, click a nearby system to open it</span>
       </div>
       <div style="height:320px;" id="systemMap"></div>
     </div>
@@ -210,7 +216,7 @@ function renderRiskCategories(record) {
   container.innerHTML = html;
 }
 
-function renderSystemMap(record) {
+async function renderSystemMap(record) {
   const container = document.getElementById("systemMap");
   const lat = parseFloat(record.LATITUDE_MEASURE);
   const lon = parseFloat(record.LONGITUDE_MEASURE);
@@ -220,9 +226,32 @@ function renderSystemMap(record) {
   }
   const context = LATEST.records
     .filter(r => r.LATITUDE_MEASURE != null && r.LONGITUDE_MEASURE != null && r.WATER_SYSTEM_NUMBER !== record.WATER_SYSTEM_NUMBER)
-    .map(r => ({ lat: parseFloat(r.LATITUDE_MEASURE), lon: parseFloat(r.LONGITUDE_MEASURE), color: getVar("--baseline"), r: 1.3 }));
-  const highlight = { lat, lon, color: statusColor(record.FINAL_SAFER_STATUS), r: 7, title: record.SYSTEM_NAME };
-  renderPointMap(container, [...context, highlight], { width: 480, height: 400 });
+    .map(r => ({
+      lat: parseFloat(r.LATITUDE_MEASURE), lon: parseFloat(r.LONGITUDE_MEASURE),
+      color: (r.COUNTY || "").trim().toUpperCase() === (record.COUNTY || "").trim().toUpperCase() ? getVar("--accent-sage") : getVar("--baseline"),
+      r: 1.6,
+      wsn: r.WATER_SYSTEM_NUMBER, name: r.SYSTEM_NAME, county: r.COUNTY, status: r.FINAL_SAFER_STATUS,
+      population: r.POPULATION != null ? parseInt(r.POPULATION, 10) || 0 : null,
+    }));
+  const highlight = {
+    lat, lon, color: statusColor(record.FINAL_SAFER_STATUS), r: 7,
+    wsn: record.WATER_SYSTEM_NUMBER, name: record.SYSTEM_NAME, county: record.COUNTY, status: record.FINAL_SAFER_STATUS,
+    population: record.POPULATION != null ? parseInt(record.POPULATION, 10) || 0 : null,
+  };
+
+  // Zoom the map's initial view to this system's own county (with a little
+  // padding around all the systems in it), rather than opening zoomed out
+  // to the whole state -- see the county-boundary data's per-county bbox.
+  let zoomToBounds = null;
+  const countyData = await loadCountyData();
+  if (countyData) {
+    const match = countyData.counties.find(c => c.nameUpper === (record.COUNTY || "").trim().toUpperCase());
+    if (match) zoomToBounds = match.bbox;
+  }
+
+  await renderPointMap(container, [...context, highlight], {
+    width: 480, height: 400, zoomToBounds, highlightCounty: record.COUNTY,
+  });
 }
 
 function showDetail(wsn) {
@@ -360,12 +389,63 @@ function renderStatusOverTime(systemChanges, record) {
   `;
 }
 
+function selectSystem(wsn) {
+  const sel = document.getElementById("filter-system");
+  if (![...sel.options].some(o => o.value === wsn)) {
+    // The matched system may be filtered out by the current county/status/
+    // economic-status filters -- clear those so the search result you
+    // picked is actually selectable, rather than silently doing nothing.
+    document.getElementById("filter-county").value = "";
+    document.getElementById("filter-status").value = "";
+    document.getElementById("filter-econ").value = "";
+    refreshSystemOptions();
+  }
+  sel.value = wsn;
+  showDetail(wsn);
+  document.getElementById("search-results").style.display = "none";
+}
+
+function runSearch() {
+  const q = document.getElementById("search-system").value.trim().toLowerCase();
+  const resultsEl = document.getElementById("search-results");
+  if (q.length < 2) {
+    resultsEl.style.display = "none";
+    resultsEl.innerHTML = "";
+    return;
+  }
+  const matches = LATEST.records
+    .filter(r => (r.SYSTEM_NAME || "").toLowerCase().includes(q) || (r.WATER_SYSTEM_NUMBER || "").toLowerCase().includes(q))
+    .slice(0, 10);
+  if (matches.length === 0) {
+    resultsEl.innerHTML = `<div style="padding:12px 14px;color:var(--muted);font-size:13px;">No systems match &ldquo;${escapeHtml(document.getElementById("search-system").value.trim())}&rdquo;.</div>`;
+    resultsEl.style.display = "block";
+    return;
+  }
+  resultsEl.innerHTML = matches.map(r => `
+    <div class="search-result-row" data-wsn="${escapeHtml(r.WATER_SYSTEM_NUMBER)}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--grid);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <span><strong>${escapeHtml(r.SYSTEM_NAME || "")}</strong> <span style="color:var(--text-secondary);font-size:12.5px;">&mdash; ${escapeHtml(titleCase(r.COUNTY || ""))}</span></span>
+      <span class="status-pill ${statusClass(r.FINAL_SAFER_STATUS)}" style="flex-shrink:0;">${escapeHtml(r.FINAL_SAFER_STATUS || "")}</span>
+    </div>`).join("");
+  resultsEl.style.display = "block";
+}
+
 renderNav("nav", "system-lookup.html");
 
 document.getElementById("filter-county").addEventListener("change", refreshSystemOptions);
 document.getElementById("filter-status").addEventListener("change", refreshSystemOptions);
 document.getElementById("filter-econ").addEventListener("change", refreshSystemOptions);
 document.getElementById("filter-system").addEventListener("change", e => showDetail(e.target.value || null));
+document.getElementById("search-system").addEventListener("input", runSearch);
+document.getElementById("search-system").addEventListener("focus", runSearch);
+document.getElementById("search-results").addEventListener("click", e => {
+  const row = e.target.closest(".search-result-row");
+  if (row) selectSystem(row.dataset.wsn);
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest("#search-system") && !e.target.closest("#search-results")) {
+    document.getElementById("search-results").style.display = "none";
+  }
+});
 document.getElementById("change-table").addEventListener("click", e => {
   const link = e.target.closest(".toggle-diff");
   if (!link) return;
@@ -398,6 +478,11 @@ document.getElementById("change-table").addEventListener("click", e => {
     notice.style.display = "none";
   }
   populateFilters();
+
+  const requested = new URLSearchParams(window.location.search).get("system");
+  if (requested && LATEST.records.some(r => r.WATER_SYSTEM_NUMBER === requested)) {
+    selectSystem(requested);
+  }
 })();
 </script>
 </body>

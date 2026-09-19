@@ -75,7 +75,7 @@
     <div class="panel">
       <div style="display:flex;align-items:baseline;justify-content:space-between;">
         <h2 style="margin-bottom:6px;">System Locations, by Status</h2>
-        <span style="font-size:11px;color:var(--muted);font-style:italic;">Approximate positions (simple lat/long projection, not official boundaries)</span>
+        <span style="font-size:11px;color:var(--muted);font-style:italic;">Approximate positions, not official boundaries &middot; scroll to zoom, drag to pan, click a system to open it</span>
       </div>
       <div style="height:340px;" id="pointMap"></div>
     </div>
@@ -233,9 +233,13 @@ async function renderPointMapForRow(row) {
       lon: parseFloat(r.LONGITUDE_MEASURE),
       color: statusColor((r.FINAL_SAFER_STATUS || "").trim()),
       r: statusClass(r.FINAL_SAFER_STATUS) === "Failing" ? 3.4 : 2.2,
-      title: `${r.SYSTEM_NAME || r.WATER_SYSTEM_NUMBER} — ${r.FINAL_SAFER_STATUS || ""}`,
+      wsn: r.WATER_SYSTEM_NUMBER,
+      name: r.SYSTEM_NAME,
+      county: r.COUNTY,
+      status: r.FINAL_SAFER_STATUS,
+      population: r.POPULATION != null ? parseInt(r.POPULATION, 10) || 0 : null,
     }));
-  renderPointMap(container, points, { width: 480, height: 420 });
+  await renderPointMap(container, points, { width: 480, height: 420 });
 }
 
 async function renderTopSystems(month, monthChanges, allChanges, row) {
@@ -262,7 +266,7 @@ async function renderTopSystems(month, monthChanges, allChanges, row) {
     const status = rec.FINAL_SAFER_STATUS || sample.to_status || "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><a href="system-lookup.html">${escapeHtml(rec.SYSTEM_NAME || sample.system_name || wsn)}</a></td>
+      <td><a href="system-lookup.html?system=${encodeURIComponent(wsn)}">${escapeHtml(rec.SYSTEM_NAME || sample.system_name || wsn)}</a></td>
       <td>${escapeHtml(titleCase(rec.COUNTY || sample.county || ""))}</td>
       <td class="num">${fmt.format(count)}</td>
       <td><span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span></td>

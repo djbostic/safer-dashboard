@@ -133,7 +133,7 @@ function renderChangesTable(direction) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(c.date)}</td>
-      <td>${escapeHtml(c.system_name || c.water_system_number)}</td>
+      <td><a href="system-lookup.html?system=${encodeURIComponent(c.water_system_number || "")}">${escapeHtml(c.system_name || c.water_system_number)}</a></td>
       <td>${escapeHtml(titleCase(c.county || ""))}</td>
       <td><span class="status-pill ${statusClass(c.from_status)}">${escapeHtml(c.from_status)}</span></td>
       <td><span class="status-pill ${statusClass(c.to_status)}">${escapeHtml(c.to_status)}</span></td>

@@ -252,11 +252,12 @@ const CATEGORY_FIELD = {
   "TMF Capacity": "TMF_CAPACITY_RISK_LEVEL",
 };
 
-// Approximate California bounding box, used to project lat/long onto a
-// simple SVG scatter (an equirectangular projection, not a true basemap --
-// good enough to show roughly where systems are without any map-tile
-// dependency or network call).
-const CA_BOUNDS = { latMin: 32.4, latMax: 42.1, lonMin: -124.6, lonMax: -113.9 };
+// California bounding box (real extent, from the same county boundary data
+// used to draw the basemap below), used to project lat/long onto a simple
+// SVG scatter -- an equirectangular projection, not a true basemap, but
+// paired with real county outlines this reads as a real map without any
+// map-tile service, API key, or runtime network call.
+const CA_BOUNDS = { latMin: 32.35, latMax: 42.15, lonMin: -124.55, lonMax: -114.0 };
 
 function projectPoint(lat, lon, width, height) {
   const x = ((lon - CA_BOUNDS.lonMin) / (CA_BOUNDS.lonMax - CA_BOUNDS.lonMin)) * width;
@@ -264,21 +265,216 @@ function projectPoint(lat, lon, width, height) {
   return { x, y };
 }
 
-// Renders `points` ({lat, lon, color, r, title}[]) as an SVG scatter into
-// container (a DOM element). Returns true if it drew anything.
-function renderPointMap(container, points, { width = 480, height = 420 } = {}) {
+// -- County/state basemap ---------------------------------------------
+// assets/data/ca-counties.json is a pre-simplified extract of US Census
+// county boundaries (via the us-atlas npm package), filtered to California
+// and bundled locally -- no runtime fetch to any map service, no API key.
+// Each county carries its real lon/lat ring coordinates plus a precomputed
+// bounding box, which is also what powers "zoom to this system's county".
+let _countyDataCache = null;
+async function loadCountyData() {
+  if (_countyDataCache !== null) return _countyDataCache;
+  try {
+    _countyDataCache = await loadJson("assets/data/ca-counties.json");
+  } catch (err) {
+    console.warn("County basemap not available:", err);
+    _countyDataCache = false;
+  }
+  return _countyDataCache;
+}
+
+function ringPath(ring, width, height) {
+  return ring.map(([lon, lat], i) => {
+    const { x, y } = projectPoint(lat, lon, width, height);
+    return `${i === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(" ") + " Z";
+}
+
+function geometryPath(type, coords, width, height) {
+  if (type === "Polygon") return coords.map(ring => ringPath(ring, width, height)).join(" ");
+  if (type === "MultiPolygon") return coords.map(poly => poly.map(ring => ringPath(ring, width, height)).join(" ")).join(" ");
+  return "";
+}
+
+// Builds the SVG markup for the state outline + all 58 county outlines,
+// meant to be placed before any point markers so it renders underneath
+// them. `highlightCounty` (a COUNTY field value, e.g. "SAN BENITO") gets a
+// slightly stronger fill so a system's own county stands out.
+function countyBasemapSvg(countyData, width, height, highlightCounty) {
+  if (!countyData) return "";
+  const state = countyData.state
+    ? `<path d="${geometryPath(countyData.state.type, countyData.state.coords, width, height)}" fill="${getVar('--surface-1')}" stroke="none"/>`
+    : "";
+  const counties = countyData.counties.map(c => {
+    const isHighlight = highlightCounty && c.nameUpper === String(highlightCounty).trim().toUpperCase();
+    const fill = isHighlight ? `color-mix(in srgb, ${getVar('--accent-terracotta')} 12%, ${getVar('--surface-1')})` : getVar('--surface-1');
+    const stroke = isHighlight ? getVar('--accent-terracotta') : getVar('--baseline');
+    const strokeWidth = isHighlight ? 1.4 : 0.6;
+    return `<path class="county-outline" data-county="${escapeHtml(c.nameUpper)}" d="${geometryPath(c.type, c.coords, width, height)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>`;
+  }).join("");
+  return state + counties;
+}
+
+// Projects a lon/lat bounding box [lonMin, latMin, lonMax, latMax] into the
+// same pixel space as projectPoint(), with padding, for use as a zoomed-in
+// initial viewBox (see "zoom to county" on Look Up a System).
+function projectBoundsToView(bbox, width, height, paddingFrac) {
+  const pad = paddingFrac != null ? paddingFrac : 0.25;
+  const p1 = projectPoint(bbox[1], bbox[0], width, height); // (latMin, lonMin) -> bottom-left-ish
+  const p2 = projectPoint(bbox[3], bbox[2], width, height); // (latMax, lonMax) -> top-right-ish
+  const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x);
+  const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
+  const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1);
+  const padX = w * pad, padY = h * pad;
+  return { x: x0 - padX, y: y0 - padY, w: w + padX * 2, h: h + padY * 2 };
+}
+
+// One shared tooltip element, reused across every map on the page (and
+// across pages, since each page creates its own on first use).
+let _mapTooltipEl = null;
+function mapTooltip() {
+  if (!_mapTooltipEl) {
+    _mapTooltipEl = document.createElement("div");
+    _mapTooltipEl.className = "map-tooltip";
+    document.body.appendChild(_mapTooltipEl);
+  }
+  return _mapTooltipEl;
+}
+
+// Renders `points` ({lat, lon, color, r, wsn, name, county, status,
+// population}[]) as an interactive SVG scatter into container (a DOM
+// element): hover for a tooltip, click a system to open it on Look Up a
+// System, scroll to zoom, drag to pan. Returns true if it drew anything.
+// A point without a wsn (rare) is shown but isn't clickable.
+async function renderPointMap(container, points, { width = 480, height = 420, zoomToBounds = null, highlightCounty = null } = {}) {
   const usable = points.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
   if (usable.length === 0) {
     container.innerHTML = `<div class="empty-state">No location data available for this view.</div>`;
     return false;
   }
-  const circles = usable.map(p => {
+
+  const countyData = await loadCountyData();
+  const basemap = countyData ? countyBasemapSvg(countyData, width, height, highlightCounty) : "";
+
+  const circles = usable.map((p, i) => {
     const { x, y } = projectPoint(p.lat, p.lon, width, height);
     const r = p.r || 3;
-    const title = p.title ? `<title>${escapeHtml(p.title)}</title>` : "";
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${p.color || getVar('--series-1')}" fill-opacity="0.85">${title}</circle>`;
+    return `<circle data-idx="${i}" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r}" fill="${p.color || getVar('--series-1')}" fill-opacity="0.9" ${p.wsn ? 'style="cursor:pointer;"' : ""}/>`;
   }).join("");
-  container.innerHTML = `<svg class="point-map" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">${circles}</svg>`;
+
+  // FULL_EXTENT is the outermost zoom-out limit (the whole state); HOME is
+  // what the map opens showing -- the full extent normally, or a specific
+  // county's bounding box when zoomToBounds is given (see "zoom to county"
+  // on Look Up a System). The reset button returns to HOME, not necessarily
+  // the full state.
+  const FULL_EXTENT = { x: 0, y: 0, w: width, h: height };
+  const HOME = zoomToBounds ? projectBoundsToView(zoomToBounds, width, height) : { ...FULL_EXTENT };
+
+  container.innerHTML = `
+    <div class="map-container">
+      <div class="map-zoom-controls">
+        <button type="button" class="map-zoom-btn" data-zoom="in" title="Zoom in" aria-label="Zoom in">+</button>
+        <button type="button" class="map-zoom-btn" data-zoom="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+        <button type="button" class="map-zoom-btn" data-zoom="reset" title="Reset view" aria-label="Reset view">&#8634;</button>
+      </div>
+      <svg class="point-map" viewBox="${HOME.x} ${HOME.y} ${HOME.w} ${HOME.h}" preserveAspectRatio="xMidYMid meet">${basemap}${circles}</svg>
+    </div>`;
+
+  const wrap = container.querySelector(".map-container");
+  const svg = container.querySelector("svg.point-map");
+  let view = { ...HOME };
+
+  function applyView() {
+    svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+  }
+
+  function clientToUser(clientX, clientY) {
+    const rect = svg.getBoundingClientRect();
+    const sx = view.w / rect.width;
+    const sy = view.h / rect.height;
+    return { x: view.x + (clientX - rect.left) * sx, y: view.y + (clientY - rect.top) * sy };
+  }
+
+  function zoomBy(factor, centerClientX, centerClientY) {
+    const center = centerClientX != null
+      ? clientToUser(centerClientX, centerClientY)
+      : { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+    let newW = view.w * factor;
+    let newH = view.h * factor;
+    // Clamp: never zoom out past the full state, never zoom in absurdly far.
+    newW = Math.min(FULL_EXTENT.w, Math.max(FULL_EXTENT.w * 0.015, newW));
+    newH = Math.min(FULL_EXTENT.h, Math.max(FULL_EXTENT.h * 0.015, newH));
+    view = {
+      x: center.x - (center.x - view.x) * (newW / view.w),
+      y: center.y - (center.y - view.y) * (newH / view.h),
+      w: newW,
+      h: newH,
+    };
+    applyView();
+  }
+
+  wrap.querySelectorAll(".map-zoom-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const action = btn.dataset.zoom;
+      if (action === "in") zoomBy(0.7);
+      else if (action === "out") zoomBy(1 / 0.7);
+      else { view = { ...HOME }; applyView(); }
+    });
+  });
+
+  svg.addEventListener("wheel", e => {
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 0.85 : 1 / 0.85, e.clientX, e.clientY);
+  }, { passive: false });
+
+  let dragging = false, lastClient = null, moved = false;
+  svg.addEventListener("mousedown", e => {
+    dragging = true; moved = false; lastClient = { x: e.clientX, y: e.clientY };
+    wrap.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", e => {
+    if (!dragging) return;
+    const rect = svg.getBoundingClientRect();
+    const dx = (e.clientX - lastClient.x) * (view.w / rect.width);
+    const dy = (e.clientY - lastClient.y) * (view.h / rect.height);
+    if (Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
+    view.x -= dx; view.y -= dy;
+    lastClient = { x: e.clientX, y: e.clientY };
+    applyView();
+  });
+  window.addEventListener("mouseup", () => { dragging = false; wrap.classList.remove("dragging"); });
+
+  function pointLabel(p) {
+    if (p.name || p.wsn) {
+      const bits = [`<strong>${escapeHtml(p.name || p.wsn)}</strong>`];
+      const meta = [p.county ? titleCase(p.county) : null, p.status || null, p.population != null ? `${fmt.format(p.population)} people` : null].filter(Boolean);
+      if (meta.length) bits.push(`<div style="color:var(--text-secondary);font-size:11.5px;">${escapeHtml(meta.join(" · "))}</div>`);
+      return bits.join("");
+    }
+    return p.title ? escapeHtml(p.title) : "";
+  }
+
+  svg.addEventListener("mousemove", e => {
+    if (dragging) { mapTooltip().style.display = "none"; return; }
+    const target = e.target.closest("circle[data-idx]");
+    if (!target) { mapTooltip().style.display = "none"; return; }
+    const p = usable[Number(target.dataset.idx)];
+    const tip = mapTooltip();
+    tip.innerHTML = pointLabel(p);
+    tip.style.left = `${e.clientX + 14}px`;
+    tip.style.top = `${e.clientY + 14}px`;
+    tip.style.display = "block";
+  });
+  svg.addEventListener("mouseleave", () => { mapTooltip().style.display = "none"; });
+
+  svg.addEventListener("click", e => {
+    if (moved) return; // a drag ending on a circle shouldn't count as a click
+    const target = e.target.closest("circle[data-idx]");
+    if (!target) return;
+    const p = usable[Number(target.dataset.idx)];
+    if (p.wsn) window.location.href = `system-lookup.html?system=${encodeURIComponent(p.wsn)}`;
+  });
+
   return true;
 }
 

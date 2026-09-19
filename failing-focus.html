@@ -136,7 +136,7 @@ function renderKpis(row) {
     { label: "Counties affected", value: countiesTotal ? `${fmt.format(countiesAffected)}${countiesPct != null ? ` (${countiesPct}%)` : ""}` : "—" },
   ];
   document.getElementById("kpi-cards").innerHTML = cards.map(c => `
-    <div class="tile"><div class="label">${escapeHtml(c.label)}</div><div class="value critical">${c.value}</div></div>
+    <div class="tile"><div class="label">${escapeHtml(c.label)}</div><div class="value">${c.value}</div></div>
   `).join("");
 }
 
@@ -176,6 +176,8 @@ function renderDualChart(summaryRows) {
       ],
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: true, labels: { color: getVar("--text-secondary"), boxWidth: 12, font: { size: 11 } } } },
       scales: {
         x: { grid: { display: false }, ticks: { color: getVar("--muted") } },
@@ -201,7 +203,7 @@ async function renderTable(row) {
   const tbody = document.getElementById("failing-table");
   tbody.innerHTML = failing.map(r => `
     <tr>
-      <td><a href="system-lookup.html">${escapeHtml(r.SYSTEM_NAME || "")}</a></td>
+      <td><a href="system-lookup.html?system=${encodeURIComponent(r.WATER_SYSTEM_NUMBER || "")}">${escapeHtml(r.SYSTEM_NAME || "")}</a></td>
       <td>${escapeHtml(titleCase(r.COUNTY || ""))}</td>
       <td class="num">${fmt.format(parseInt(r.POPULATION, 10) || 0)}</td>
       <td>${escapeHtml(r.FAILING_START_DATE || "—")}</td>
